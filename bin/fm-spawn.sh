@@ -73,6 +73,7 @@ launch_template() {
     pioneer) printf '%s' 'cpion "$(cat __BRIEF__)"' ;;
     cb) printf '%s' 'cb "$(cat __BRIEF__)"' ;;
     ctoken) printf '%s' 'ctoken "$(cat __BRIEF__)"' ;;
+    cursor-agent) printf '%s' 'cursor-agent "$(cat __BRIEF__)"' ;;
     codex) printf '%s' 'codex --dangerously-bypass-approvals-and-sandbox -c "notify=[\"bash\",\"-c\",\"touch __TURNEND__\"]" "$(cat __BRIEF__)"' ;;
     opencode) printf '%s' 'OPENCODE_CONFIG_CONTENT='\''{"permission":{"*":"allow"}}'\'' opencode --prompt "$(cat __BRIEF__)"' ;;
     pi) printf '%s' 'pi -e __PIEXT__ "$(cat __BRIEF__)"' ;;
@@ -183,6 +184,12 @@ EOF
   codex*)
     # codex: turn-end rides the launch command via -c notify=[...] and __TURNEND__.
     ;;
+  cursor-agent*)
+    # cursor-agent has no Stop hook mechanism. The watcher will catch status
+    # file writes per the brief's reporting protocol; no turn-end file is
+    # written, so the watcher's other heuristics (status appends, exit
+    # detection) drive supervision.
+    : ;;
 esac
 
 # Per-project delivery mode + yolo flag (bin/fm-project-mode.sh; AGENTS.md sections 6-7).

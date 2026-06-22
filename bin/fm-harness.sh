@@ -5,6 +5,9 @@
 #                              (config/crew-harness; "default" resolves to own)
 # Detection layers: verified environment markers first, then process ancestry.
 # Record each newly verified env marker here.
+# cursor-agent has no env marker and uses a binary outside the verified set;
+# it is selected by captain override (config/crew-harness) only and never
+# auto-detected. If you verify a marker for it, add it here.
 set -u
 
 FM_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
