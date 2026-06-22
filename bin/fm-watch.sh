@@ -170,6 +170,29 @@ while :; do
 $pending
 EOF
     reason="signal:$files"
+    # Scout auto-teardown: when a status write lands for a scout task whose
+    # last line is done: or failed:, the watcher releases the worktree slot
+    # itself instead of waiting for firstmate to call fm-teardown. Ship
+    # tasks are never auto-torn-down here - they have PRs and merge gates.
+    # fm-teardown.sh enforces its own scout report-exists check; if the
+    # report is missing it will refuse and the error is surfaced below.
+    while IFS=$(printf '\t') read -r sf sig f; do
+      [ -n "$sf" ] || continue
+      id=$(basename "$f" .status)
+      META="$STATE/$id.meta"
+      [ -f "$META" ] || continue
+      KIND=$(grep '^kind=' "$META" 2>/dev/null | cut -d= -f2- || true)
+      [ "$KIND" = scout ] || continue
+      last=$(tail -1 "$f" 2>/dev/null || true)
+      case "$last" in
+        'done:'*|'failed:'*)
+          echo "watcher: auto-teardown scout $id (last status: $last)" >&2
+          "$SCRIPT_DIR/fm-teardown.sh" "$id" >&2 || echo "watcher: auto-teardown of scout $id refused (see fm-teardown output above)" >&2
+          ;;
+      esac
+    done <<EOF
+$pending
+EOF
     while IFS=$(printf '\t') read -r sf sig f; do
       [ -n "$sf" ] || continue
       fm_wake_append signal "$(basename "$f")" "$reason" || exit 1
