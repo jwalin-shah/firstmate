@@ -34,6 +34,8 @@ Due per-task checks run before signal scanning so chatty crewmate status updates
 Never rely on hooks or status files alone; the heartbeat review of every window is mandatory and unconditional.
 tmux is the ground truth.
 
+Scout worktrees are auto-torn-down the moment the watcher sees a `done:` or `failed:` status line for a `kind=scout` task — firstmate does not call `bin/fm-teardown.sh` for them by hand. `fm-teardown.sh`'s report-exists check still gates the release, so a scout without `data/<id>/report.md` refuses (the watcher logs the refusal and firstmate sees it on the next wake). Ship tasks never auto-teardown here; their merge gate is captain approval.
+
 **Watcher liveness is guarded, not just disciplined.**
 `fm-watch.sh` touches `state/.last-watcher-beat` every poll cycle. The supervision scripts (`fm-peek`, `fm-send`, `fm-spawn`, `fm-teardown`, `fm-pr-check`, `fm-promote`, `fm-review-diff`, `fm-fleet-sync`) call `bin/fm-guard.sh` first, which warns to stderr when queued wakes are pending or the beacon is missing/older than `FM_GUARD_GRACE` (default 300s). If guard warns about pending wakes: drain them first. If guard warns about stale liveness: arm `bin/fm-watch.sh` after draining.
 Do not run foreground-blocking operations (long builds, pipelines) while tasks are in flight — background them so watcher wakes can interleave.
