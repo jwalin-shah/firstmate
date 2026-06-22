@@ -104,4 +104,23 @@ if [ "$KIND" != scout ] && [ "$MODE" != local-only ]; then
   "$FM_ROOT/bin/fm-fleet-sync.sh" "$PROJ" || true
 fi
 echo "teardown $ID complete (window $T, worktree $WT)"
+
+# Post-task learn: append a structured entry to data/captain.md and data/learn-log.md
+# Pull the last status line and any report summary as the learning record.
+LEARN_LOG="$FM_ROOT/data/learn-log.md"
+LAST_STATUS=$(tail -1 "$STATE/$ID.status" 2>/dev/null || echo "no status")
+REPORT_SUMMARY=""
+if [ -f "$FM_ROOT/data/$ID/report.md" ]; then
+  REPORT_SUMMARY=$(head -5 "$FM_ROOT/data/$ID/report.md" 2>/dev/null || true)
+fi
+{
+  echo ""
+  echo "## $(date -u +%Y-%m-%d) — $ID ($KIND, $MODE)"
+  echo "project: $PROJ"
+  echo "outcome: $LAST_STATUS"
+  [ -n "$REPORT_SUMMARY" ] && printf 'report-summary: %s\n' "$REPORT_SUMMARY"
+  echo "---"
+} >> "$LEARN_LOG"
+printf '%s\n' "📚 Learn: appended task outcome to data/learn-log.md"
+
 printf '%s\n' "🌱 Backlog: $ID just finished. Update data/backlog.md - move $ID to Done (keep Done to the 10 most recent), then re-scan Queued for items now unblocked (a \"blocked-by: $ID\" may have just cleared) or now time-due, and dispatch what's ready."
