@@ -212,4 +212,18 @@ tmux send-keys -t "$T" -l "$LAUNCH"
 sleep 0.3
 tmux send-keys -t "$T" Enter
 
+# Background: auto-accept trust/permission dialogs (claude/codex/pi; opencode has none).
+# Runs 4 checks over 32s post-launch; silently sends Enter whenever a trust prompt is
+# visible, and exits. If no dialog appears, this is a no-op. Background subshell so
+# it never blocks spawn.
+(
+  for _attempt in 1 2 3 4; do
+    sleep 8
+    _pane=$(tmux capture-pane -t "$T" -p 2>/dev/null || true)
+    if printf '%s' "$_pane" | grep -qi "trust\|Do you trust\|I trust this folder\|trust the contents"; then
+      tmux send-keys -t "$T" "" Enter
+    fi
+  done
+) &
+
 echo "spawned $ID harness=$HARNESS kind=$KIND mode=$MODE yolo=$YOLO window=$T worktree=$WT"
