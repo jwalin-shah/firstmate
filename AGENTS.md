@@ -206,6 +206,22 @@ Needs a smoke-test spawn to empirically confirm (first spawn in a fresh worktree
 Turn-end hook and trust dialog behavior are identical to `claude`.
 Needs a smoke-test spawn to empirically confirm (first spawn in a fresh worktree may show a trust/bypass-permissions dialog; follow the claude spawn protocol from section 4).
 
+### cursor-agent (ADDED 2026-06-22 — needs smoke-test spawn)
+
+`cursor-agent` is a CLI at `~/.local/bin/cursor-agent` that runs an interactive TUI (same paradigm as claude/codex/pi — visible pane in tmux, not headless). Cursor uses `.cursor/rules/` for project rules, not `/<skill>` invocation, so skills are not invokable the same way.
+
+| Fact | Value |
+|---|---|
+| Busy-pane signature | TBD — needs smoke test |
+| Exit command | TBD — check on first spawn |
+| Interrupt | TBD — likely Escape |
+| Skill invocation | N/A — cursor uses `.cursor/rules/` not `/<skill>` |
+
+Launch: `cursor-agent "$(cat brief.md)"` in the treehouse worktree — do NOT pass `--worktree` (cursor-agent has its own worktree mechanism, but firstmate uses treehouse, so let it run in the treehouse-managed directory).
+Model override: pass `--model <model>` (e.g. `sonnet-4`, `gpt-5`) if needed; defaults to account default.
+Turn-end: no Stop hook; watcher relies on status file writes per brief rules.
+Needs a smoke-test spawn to fill in busy signature and exit command.
+
 ## 5. Recovery (run at every session start, after bootstrap)
 
 You may have been restarted mid-flight.
