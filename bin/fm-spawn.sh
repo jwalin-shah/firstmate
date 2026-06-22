@@ -22,6 +22,20 @@
 # Per-harness turn-end hooks are installed automatically; some live outside the worktree.
 # On success prints: spawned <id> harness=<name> kind=<ship|scout> mode=<mode> yolo=<on|off> window=<session:window> worktree=<path>
 # mode/yolo are resolved per-project from data/projects.md via fm-project-mode.sh.
+#
+# fm-tasks integration: every spawn records the task in the SQLite AXI task store at
+# data/tasks.db via `fm-tasks add --id ... --repo ... --kind ... --title ...`. The call
+# is non-fatal - if fm-tasks is missing or fails, the markdown backlog at data/backlog.md
+# is still the canonical source for this task. New spawns live in fm-tasks going forward;
+# the backlog stays as a human-readable mirror. fm-tasks subcommands used by firstmate:
+#   fm-tasks add    --id <id> --repo <name> --kind <ship|scout> --title <text>
+#                   [--blocked-by <id> --blocked-reason <text> --meta '<json>']
+#   fm-tasks start  <id>                       # queued -> inflight
+#   fm-tasks done   <id> --pr <url>|--local    # inflight -> done
+#   fm-tasks fail   <id>                       # inflight -> failed
+#   fm-tasks ls     [--status inflight|queued|done|failed] [--repo <name>]
+#                   [--fields id,repo,kind,status,...] (default tab-separated rows;
+#                   no --json flag in this build, parse the tab-separated output instead)
 set -eu
 
 FM_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -211,6 +225,19 @@ mkdir -p "$FM_ROOT/state"
   echo "mode=$MODE"
   echo "yolo=$YOLO"
 } > "$FM_ROOT/state/$ID.meta"
+
+# Best-effort: mirror the spawn into the SQLite task store. The data/<id>/brief.md
+# may exist with a one-line title we can reuse; fall back to a generic placeholder
+# when it is absent. Errors are swallowed so a missing/broken fm-tasks never blocks
+# spawn (data/backlog.md remains the canonical store for this run).
+SPAWN_TITLE="firstmate task $ID ($KIND)"
+if [ -f "$BRIEF" ]; then
+  _t=$(grep -m1 '^# ' "$BRIEF" 2>/dev/null | sed -e 's/^# //' -e 's/[[:space:]]*$//')
+  [ -n "$_t" ] && SPAWN_TITLE="$_t"
+fi
+fm-tasks add --id "$ID" --repo "$PROJ_NAME" --kind "$KIND" --title "$SPAWN_TITLE" \
+  >/dev/null 2>&1 || true
+fm-tasks start "$ID" >/dev/null 2>&1 || true
 
 LAUNCH=${LAUNCH//__BRIEF__/$BRIEF}
 LAUNCH=${LAUNCH//__TURNEND__/$TURNEND}

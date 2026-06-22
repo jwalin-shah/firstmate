@@ -8,6 +8,11 @@
 #   heartbeat              fleet review due; starts at FM_HEARTBEAT and backs off to FM_HEARTBEAT_MAX
 # Run as a background task. Re-arm it after handling each wake; duplicate
 # invocations no-op through the watcher singleton lock.
+#
+# fm-tasks integration: heartbeat inflight counts come from the SQLite AXI task
+# store (`fm-tasks ls --status inflight`) instead of grepping the markdown backlog.
+# Falls back to backlog.md when fm-tasks is missing or fails. Subcommand used:
+#   fm-tasks ls --status inflight --fields id,repo,kind,status   # tab-separated rows
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -94,6 +99,20 @@ age_of() {  # seconds since file mtime; "due immediately" if missing
 }
 
 [ -e "$STATE/.last-heartbeat" ] || touch "$STATE/.last-heartbeat"
+
+# fm-tasks-backed inflight count. Firstmate's heartbeat phase uses this to know how
+# many tasks are open without grepping the markdown backlog. Returns 0 on any
+# failure (missing binary, broken store) so the watcher never wedges - backlog.md
+# remains canonical.
+inflight_count() {
+  if command -v fm-tasks >/dev/null 2>&1; then
+    fm-tasks ls --status inflight 2>/dev/null \
+      | awk -F: '/^count: / { n=$2; sub(/ .*/, "", n); print n+0; exit }' \
+      || echo 0
+  else
+    echo 0
+  fi
+}
 
 # Layer 2 + 3 signal scan: status files and turn-end markers. Each file is
 # compared against a persisted size:mtime signature (.seen-*) rather than
@@ -223,7 +242,10 @@ EOF
   hb=$(( HEARTBEAT * (1 << streak) ))
   [ "$hb" -gt "$HEARTBEAT_MAX" ] && hb=$HEARTBEAT_MAX
   if [ "$(age_of "$STATE/.last-heartbeat")" -ge "$hb" ]; then
-    fm_wake_append heartbeat heartbeat heartbeat || exit 1
+    # Surface the inflight count from fm-tasks alongside the heartbeat wake so
+    # firstmate can glance at the task store without re-parsing backlog.md.
+    inflight=$(inflight_count)
+    fm_wake_append heartbeat heartbeat "heartbeat: inflight=$inflight" || exit 1
     touch "$STATE/.last-heartbeat"
     wake "heartbeat"
   fi
