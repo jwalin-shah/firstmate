@@ -72,6 +72,7 @@ launch_template() {
     claude) printf '%s' 'claude --dangerously-skip-permissions "$(cat __BRIEF__)"' ;;
     pioneer) printf '%s' 'cpion "$(cat __BRIEF__)"' ;;
     cb) printf '%s' 'cb "$(cat __BRIEF__)"' ;;
+    ctoken) printf '%s' 'ctoken "$(cat __BRIEF__)"' ;;
     codex) printf '%s' 'codex --dangerously-bypass-approvals-and-sandbox -c "notify=[\"bash\",\"-c\",\"touch __TURNEND__\"]" "$(cat __BRIEF__)"' ;;
     opencode) printf '%s' 'OPENCODE_CONFIG_CONTENT='\''{"permission":{"*":"allow"}}'\'' opencode --prompt "$(cat __BRIEF__)"' ;;
     pi) printf '%s' 'pi -e __PIEXT__ "$(cat __BRIEF__)"' ;;
@@ -146,7 +147,7 @@ exclude_path() {
   grep -qxF "$rel" "$EXCL" 2>/dev/null || echo "$rel" >> "$EXCL"
 }
 case "$HARNESS" in
-  claude*|pioneer|cb)
+  claude*|pioneer|cb|ctoken)
     mkdir -p "$WT/.claude"
     cat > "$WT/.claude/settings.local.json" <<EOF
 {"hooks":{"Stop":[{"hooks":[{"type":"command","command":"touch '$TURNEND'"}]}]}}

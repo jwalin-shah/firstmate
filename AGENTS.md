@@ -192,6 +192,20 @@ Since it launches the same Claude Code CLI under account B, it inherits all clau
 Turn-end hook and trust dialog behavior are identical to `claude`.
 Needs a smoke-test spawn to empirically confirm (first spawn in a fresh worktree may show a trust/bypass-permissions dialog; follow the claude spawn protocol from section 4).
 
+### ctoken (ADDED 2026-06-22 — needs smoke-test spawn)
+
+`ctoken` is `~/bin/claude-rollover run token --dangerously-skip-permissions` — Token account API key auth, otherwise identical to `claude`/`cb`.
+
+| Fact | Value |
+|---|---|
+| Busy-pane signature | `esc to interrupt` |
+| Exit command | `/exit` |
+| Interrupt | single Escape |
+| Skill invocation | `/<skill>` (e.g. `/no-mistakes`) |
+
+Turn-end hook and trust dialog behavior are identical to `claude`.
+Needs a smoke-test spawn to empirically confirm (first spawn in a fresh worktree may show a trust/bypass-permissions dialog; follow the claude spawn protocol from section 4).
+
 ## 5. Recovery (run at every session start, after bootstrap)
 
 You may have been restarted mid-flight.
