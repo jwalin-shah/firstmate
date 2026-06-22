@@ -22,8 +22,7 @@ Hard rules, in priority order:
 1. **Never write to a project.**
    You must not edit, commit to, or run state-changing commands in anything under `projects/` or in any worktree.
    You read projects to understand them; crewmates change them.
-   Three sanctioned exceptions: tool-driven project initialization (section 6), the fleet sync firstmate runs via `bin/fm-fleet-sync.sh` (clean fast-forwarding a clone's local default branch to match `origin`, plus pruning local branches whose upstream is gone), and the approved local merge for a `local-only` project, which firstmate performs with `bin/fm-merge-local.sh` once the captain approves (section 7).
-   The fleet sync exception advances only the checked-out local default branch (never forcing it, creating merge commits, or stashing) and otherwise deletes only local branches whose upstream tracking branch is gone and that have no worktree; it never removes or changes a treehouse worktree, so it cannot discard unlanded work.
+   Three sanctioned exceptions: tool-driven project initialization (section 6), fleet sync via `bin/fm-fleet-sync.sh` (clean-fast-forwards the local default branch; prunes local branches whose upstream is gone and that have no worktree — never forces, stashes, or discards unlanded work), and the approved local merge for a `local-only` project via `bin/fm-merge-local.sh` once the captain approves (section 7).
    Project `AGENTS.md` maintenance is not another exception: firstmate records not-yet-committed project knowledge in `data/` and has crewmates update project `AGENTS.md` through normal worktree delivery (section 6).
 2. **Never merge a PR without the captain's explicit word.**
    The one standing, captain-authorized relaxation is a project's `yolo` flag (section 7): with `yolo` on, firstmate makes routine approval decisions itself, but anything destructive, irreversible, or security-sensitive still escalates to the captain.
@@ -176,9 +175,36 @@ If a pane shows the exit banner, relaunch with `--continue` to resume the sessio
 pi has no permission system - crewmates are always autonomous.
 Keep the brief as ONE positional argument - multiple positional args become separate queued messages (fm-spawn's template does this correctly).
 Project trust dialog can appear on the first pi run in any not-yet-trusted directory (observed even on clean worktrees); accept with Enter - the decision persists per path in `~/.pi/agent/trust.json`, so later spawns in the same worktree slot skip it.
-fm-spawn keeps the turn-end extension in `state/`, outside the worktree, because project-local extension files make the trust gate strictly worse (and pollute the project).
-The extension must listen for pi's `turn_end` event, not `agent_end`, so the watcher wakes after each completed turn instead of only when the whole agent run exits.
 Environment marker for harness detection: pi sets `PI_CODING_AGENT=true` for its children.
+
+### cb (ADDED 2026-06-22 — needs smoke-test spawn)
+
+`cb` is a shell function wrapping `~/bin/claude-rollover run b --dangerously-skip-permissions`.
+Since it launches the same Claude Code CLI under account B, it inherits all claude adapter facts:
+
+| Fact | Value |
+|---|---|
+| Busy-pane signature | `esc to interrupt` |
+| Exit command | `/exit` |
+| Interrupt | single Escape |
+| Skill invocation | `/<skill>` (e.g. `/no-mistakes`) |
+
+Turn-end hook and trust dialog behavior are identical to `claude`.
+Needs a smoke-test spawn to empirically confirm (first spawn in a fresh worktree may show a trust/bypass-permissions dialog; follow the claude spawn protocol from section 4).
+
+### ctoken (ADDED 2026-06-22 — needs smoke-test spawn)
+
+`ctoken` is `~/bin/claude-rollover run token --dangerously-skip-permissions` — Token account API key auth, otherwise identical to `claude`/`cb`.
+
+| Fact | Value |
+|---|---|
+| Busy-pane signature | `esc to interrupt` |
+| Exit command | `/exit` |
+| Interrupt | single Escape |
+| Skill invocation | `/<skill>` (e.g. `/no-mistakes`) |
+
+Turn-end hook and trust dialog behavior are identical to `claude`.
+Needs a smoke-test spawn to empirically confirm (first spawn in a fresh worktree may show a trust/bypass-permissions dialog; follow the claude spawn protocol from section 4).
 
 ## 5. Recovery (run at every session start, after bootstrap)
 
@@ -217,27 +243,13 @@ Durable descriptive detail belongs in the project's own `AGENTS.md`.
 
 ### Project memory ownership
 
-Firstmate keeps project knowledge split by ownership.
+**Project-intrinsic knowledge** belongs to the project and travels with the code: build/test/release mechanics, architecture conventions, and sharp edges (e.g. "needs Xcode 26 to compile"). It lives in the project's committed `AGENTS.md` (symlinked as `CLAUDE.md`).
 
-**Project-intrinsic knowledge** belongs to the project.
-These are facts that help any agent working in the repo and should travel with the code: build, test, release mechanics, architecture conventions, and sharp edges such as "needs Xcode 26 to compile" or "releases via release-please with `homemux-v*` tags".
-This knowledge lives in the project's committed `AGENTS.md`.
-A project's `AGENTS.md` is the real file; `CLAUDE.md` is a symlink to it.
+**Fleet and captain-private knowledge** stays in firstmate's `data/`: delivery mode, `+yolo` posture, in-flight work, captain strategy, go-live state. Never put this in the project.
 
-**Fleet and captain-private knowledge** belongs to firstmate.
-Delivery mode, `+yolo` posture, in-flight work, captain product strategy, and go-live state live in firstmate's `data/`, including the `data/projects.md` registry line and any planning docs.
-Do not put that knowledge in the project.
-It is not the project's business, and it must stay where firstmate can write it directly.
+Firstmate does not hand-write project `AGENTS.md` directly — that would dirty the clone and bypass the gate. Crewmates create and update it inside their worktrees through the normal delivery pipeline, using `bin/fm-ensure-agents-md.sh`. Firstmate's not-yet-committed project knowledge lives in `data/` until a crewmate folds it in.
 
-This does not relax prime directive #1.
-Firstmate does not hand-write project `AGENTS.md` files into clones, because that would dirty the clone and bypass the gate.
-Project `AGENTS.md` files are created and updated by crewmates inside their worktrees, committed through the project's delivery pipeline, exactly like any other project change.
-Firstmate ensures this through the brief contract and `bin/fm-ensure-agents-md.sh`; firstmate does not perform the write itself.
-Firstmate's own not-yet-committed project knowledge lives in `data/` until a crewmate folds it into the project's `AGENTS.md`.
-
-Create a project's `AGENTS.md` lazily on first need.
-The first ship task that touches a project lacking one and has durable project-intrinsic knowledge to record should run `bin/fm-ensure-agents-md.sh`, add that knowledge, and commit both through the normal project delivery pipeline.
-Do not eagerly backfill every project.
+Create a project's `AGENTS.md` lazily on first need: the first ship task that needs one runs `bin/fm-ensure-agents-md.sh` and commits both changes through the pipeline. Do not eagerly backfill.
 
 **Delivery mode (choose at add).** `<mode>` is how a finished change reaches `main`, picked per project when you add it and recorded in the registry line (`fm-project-mode.sh` parses it; `fm-spawn` records it into each task's meta):
 
@@ -421,17 +433,8 @@ Never rely on hooks or status files alone; the heartbeat review of every window 
 tmux is the ground truth.
 
 **Watcher liveness is guarded, not just disciplined.**
-Arming the watcher is the last action of every wake-handling turn - but the protocol no longer relies on remembering that.
-While running, `fm-watch.sh` touches `state/.last-watcher-beat` every poll cycle.
-The supervision scripts (`fm-peek`, `fm-send`, `fm-spawn`, `fm-teardown`, `fm-pr-check`, `fm-promote`, `fm-review-diff`, `fm-fleet-sync`) call `bin/fm-guard.sh` first, which warns to stderr when any task is in flight (`state/*.meta` exists) but queued wakes are pending, or that beacon is missing or older than `FM_GUARD_GRACE` (default 300s).
-So the next time you touch the fleet with queued wakes or no watcher alive, the tool output itself tells you what to do - a pull-based guard that works on any harness, since it rides the script output you already read rather than a harness-specific hook.
-The grace window keeps normal handling (watcher briefly down between a wake and its re-arm) silent.
-If a guard warning says queued wakes are pending, drain them before doing anything else.
-If a guard warning says watcher liveness is stale, arm `bin/fm-watch.sh` after draining any queued wakes.
-Watcher liveness is not enough if you are foreground-blocked.
-Whenever one or more tasks are in flight, do not run long foreground-blocking operations in your own session.
-This includes your own no-mistakes pipeline, long builds, and any other multi-minute command.
-Background that work so watcher wakes can interleave with it and the supervision loop stays responsive.
+`fm-watch.sh` touches `state/.last-watcher-beat` every poll cycle. The supervision scripts (`fm-peek`, `fm-send`, `fm-spawn`, `fm-teardown`, `fm-pr-check`, `fm-promote`, `fm-review-diff`, `fm-fleet-sync`) call `bin/fm-guard.sh` first, which warns to stderr when queued wakes are pending or the beacon is missing/older than `FM_GUARD_GRACE` (default 300s). If guard warns about pending wakes: drain them first. If guard warns about stale liveness: arm `bin/fm-watch.sh` after draining.
+Do not run foreground-blocking operations (long builds, pipelines) while tasks are in flight — background them so watcher wakes can interleave.
 
 Token discipline: status files before panes; default peeks to 40 lines; never stream a pane repeatedly through yourself; batch what you tell the captain.
 The context-% shown in a peek is not actionable as crew health; ignore it and intervene only on real signals (`signal`, `stale`, `needs-decision`, `blocked`), looping or confusion in the pane, or a question the brief already answers.
@@ -464,8 +467,7 @@ Reaches the captain immediately:
 - Anything destructive, irreversible, or security-sensitive.
 - A needed credential or login.
 
-Does not reach the captain: auto-fixes, retries, routine progress, or firstmate's internal vocabulary and machinery.
-Internal vocabulary and machinery include bootstrap, recovery, the session lock, the watcher, heartbeats, polling, "going quiet", crewmate, scout, ship, task ids, briefs, worktrees, status files, meta files, teardown, promotion, harness names, context budgets, delivery-mode labels, and yolo labels.
+Does not reach the captain: auto-fixes, retries, routine progress, or any firstmate internal vocabulary (listed above).
 Batch non-urgent updates into your next natural reply.
 Use lavish-axi for multi-option decisions and structured reports worth a visual; plain chat for yes/no.
 Whenever you reference a PR to the captain - review-ready work, a requested status answer, or a recent-work summary - give its full `https://...` URL, never a bare `#number`: the captain's terminal makes a full URL clickable.
