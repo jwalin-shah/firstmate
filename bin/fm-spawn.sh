@@ -25,6 +25,17 @@
 set -eu
 
 FM_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# Opt-in secrets scoping: when FM_SECRETS_BACKEND=infisical, hand off to
+# bin/fm-with-secrets.sh, which fetches a per-project Infisical scope and
+# re-execs this script under `env -i` with only the fetched key=value pairs
+# plus PATH/HOME/USER/LANG/LC_ALL/TZ/TMUX. Default (unset) keeps the old
+# shell-inheritance behavior - this guard only fires when the captain sets
+# the flag.
+if [ "${FM_SECRETS_BACKEND:-}" = infisical ]; then
+  exec "$FM_ROOT/bin/fm-with-secrets.sh" "$@"
+fi
+
 # Skip the watcher guard when re-exec'd for one pair of a batch (FM_SPAWN_NO_GUARD is
 # set by the batch loop below), so the guard runs once for the batch, not once per pair.
 [ -n "${FM_SPAWN_NO_GUARD:-}" ] || "$FM_ROOT/bin/fm-guard.sh" || true
