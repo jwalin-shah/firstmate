@@ -8,6 +8,20 @@
 #   heartbeat              fleet review due; starts at FM_HEARTBEAT and backs off to FM_HEARTBEAT_MAX
 # Run as a background task. Re-arm it after handling each wake; duplicate
 # invocations no-op through the watcher singleton lock.
+#
+# Dependency: fswatch (https://github.com/emcrisostomo/fswatch). On macOS,
+# `brew install fswatch`. The watcher uses fswatch to block on file-system
+# events under $STATE so it spends zero CPU while idle and wakes within
+# milliseconds of a status or turn-end write. The legacy poll loop (with
+# FM_POLL seconds between sweeps) is kept as a fallback when fswatch is
+# not on PATH; a warning is printed once per invocation in that mode.
+#
+# fswatch filter notes:
+#   - `--filter-mode=conjunctive` is REQUIRED; the default legacy mode
+#     passes every event through regardless of `--include` / `--exclude`.
+#   - Multiple `--include` flags are AND-ed, so the two patterns below
+#     together admit .status and .turn-ended while still skipping
+#     .last-check / .heartbeat-streak / .seen-* / .hash-* / etc.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -67,6 +81,20 @@ SIGNAL_GRACE=${FM_SIGNAL_GRACE:-30}   # seconds to linger after a signal so trai
 # Busy signatures per harness, OR-ed. Extend via env when new adapters are verified.
 # claude/codex: "esc to interrupt"; opencode: "esc interrupt"; pi: "Working..."
 BUSY_REGEX=${FM_BUSY_REGEX:-'esc (to )?interrupt|Working\.\.\.'}
+
+# Event-driven wait: fswatch blocks on file-system events under $STATE so the
+# watcher spends zero CPU while idle and wakes within milliseconds of a status
+# or turn-end write. The polling path is kept as a fallback when fswatch is
+# absent on PATH; a warning is printed once per invocation in that mode.
+FSWATCH_BIN=
+if command -v fswatch >/dev/null 2>&1; then
+  FSWATCH_BIN=$(command -v fswatch)
+elif [ -x /opt/homebrew/bin/fswatch ]; then
+  FSWATCH_BIN=/opt/homebrew/bin/fswatch
+fi
+if [ -z "$FSWATCH_BIN" ]; then
+  echo "fm-watch: fswatch not found on PATH; falling back to poll mode (FM_POLL=${POLL}s)" >&2
+fi
 
 hash_pane() {
   if command -v md5 >/dev/null 2>&1; then md5 -q; else md5sum | cut -d' ' -f1; fi
@@ -131,6 +159,15 @@ while :; do
   # Liveness beacon for fm-guard.sh: a fresh mtime here means a watcher is
   # alive. Supervision scripts warn when this goes stale with tasks in flight.
   touch "$STATE/.last-watcher-beat"
+
+  # Heartbeat cadence is computed once per cycle so the fswatch wait below
+  # unblocks on the same schedule as the time-based heartbeat check further
+  # down. Streak backs off exponentially when the fleet is idle (idle heartbeats
+  # only fire, never reset) up to HEARTBEAT_MAX, and resets on any real wake.
+  streak=$(cat "$STATE/.heartbeat-streak" 2>/dev/null || echo 0)
+  [ "$streak" -gt 12 ] && streak=12
+  hb=$(( HEARTBEAT * (1 << streak) ))
+  [ "$hb" -gt "$HEARTBEAT_MAX" ] && hb=$HEARTBEAT_MAX
 
   # Slow per-task checks (firstmate writes these, e.g. a merged-PR poll).
   # Time-based via .last-check mtime so the cadence survives watcher restarts.
@@ -218,15 +255,30 @@ EOF
   # Heartbeat: firstmate reviews the whole fleet at a regular cadence no matter
   # what. Time-based via .last-heartbeat mtime; interval doubles per consecutive
   # heartbeat (idle fleet) up to HEARTBEAT_MAX, and resets on any other wake.
-  streak=$(cat "$STATE/.heartbeat-streak" 2>/dev/null || echo 0)
-  [ "$streak" -gt 12 ] && streak=12
-  hb=$(( HEARTBEAT * (1 << streak) ))
-  [ "$hb" -gt "$HEARTBEAT_MAX" ] && hb=$HEARTBEAT_MAX
+  # streak/hb are computed at the top of the loop so the fswatch wait below
+  # can also unblock on the same schedule.
   if [ "$(age_of "$STATE/.last-heartbeat")" -ge "$hb" ]; then
     fm_wake_append heartbeat heartbeat heartbeat || exit 1
     touch "$STATE/.last-heartbeat"
     wake "heartbeat"
   fi
 
-  sleep "$POLL"
+  # Block on fswatch instead of polling. A background timer SIGTERMs fswatch
+  # when the streak-adjusted heartbeat interval elapses so time-based wakes
+  # still fire on schedule. .check.sh / .last-check / .heartbeat-streak /
+  # .hash-* / .seen-* writes happen inside the watcher itself and must not
+  # re-trigger this loop, which is why --include narrows fswatch to the two
+  # external signal files (status writes from crewmates, turn-end hooks).
+  if [ -n "$FSWATCH_BIN" ]; then
+    "$FSWATCH_BIN" -1 -r --filter-mode=conjunctive "$STATE" \
+      --include='\.status' --include='\.turn-ended' >/dev/null 2>&1 &
+    FSWATCH_PID=$!
+    ( sleep "$hb"; kill -TERM "$FSWATCH_PID" 2>/dev/null ) &
+    HB_TIMER_PID=$!
+    wait "$FSWATCH_PID" 2>/dev/null || true
+    kill "$HB_TIMER_PID" 2>/dev/null || true
+    wait "$HB_TIMER_PID" 2>/dev/null || true
+  else
+    sleep "$POLL"
+  fi
 done
