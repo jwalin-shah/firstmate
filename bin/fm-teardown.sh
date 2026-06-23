@@ -14,6 +14,8 @@ set -eu
 
 FM_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 "$FM_ROOT/bin/fm-guard.sh" || true
+# shellcheck source=bin/fm-mm-lib.sh
+. "$FM_ROOT/bin/fm-mm-lib.sh"
 STATE="$FM_ROOT/state"
 ID=$1
 FORCE=${2:-}
@@ -23,6 +25,12 @@ META="$STATE/$ID.meta"
 WT=$(grep '^worktree=' "$META" | cut -d= -f2-)
 T=$(grep '^window=' "$META" | cut -d= -f2-)
 PROJ=$(grep '^project=' "$META" | cut -d= -f2-)
+# backend= and pane=/session= are recorded by fm-spawn when running under mintmux.
+# pane= is kept in meta for downstream consumers (fm-peek, fm-send) and shell tooling
+# that may want to inspect the live pane id; teardown only needs session= to kill.
+BACKEND=$(grep '^backend=' "$META" | cut -d= -f2- || true)
+[ -n "$BACKEND" ] || BACKEND=tmux
+SESS=$(grep '^session=' "$META" | cut -d= -f2- || true)
 
 KIND=$(grep '^kind=' "$META" | cut -d= -f2- || true)
 [ -n "$KIND" ] || KIND=ship
@@ -99,11 +107,16 @@ if [ -d "$WT" ]; then
 fi
 
 tmux kill-window -t "$T" 2>/dev/null || true
+# Mintmux teardown: kill the session we recorded. Tolerates a session that is
+# already gone (e.g. teardown was re-run after a successful prior teardown).
+if [ "$BACKEND" = mintmux ] && [ -n "$SESS" ]; then
+  mm_kill_session "$SESS" 2>/dev/null || true
+fi
 rm -f "$STATE/$ID.status" "$STATE/$ID.turn-ended" "$STATE/$ID.check.sh" "$STATE/$ID.meta" "$STATE/$ID.pi-ext.ts"
 if [ "$KIND" != scout ] && [ "$MODE" != local-only ]; then
   "$FM_ROOT/bin/fm-fleet-sync.sh" "$PROJ" || true
 fi
-echo "teardown $ID complete (window $T, worktree $WT)"
+echo "teardown $ID complete (window $T, worktree $WT, backend=$BACKEND)"
 
 # Post-task learn: append a structured entry to data/captain.md and data/learn-log.md
 # Pull the last status line and any report summary as the learning record.

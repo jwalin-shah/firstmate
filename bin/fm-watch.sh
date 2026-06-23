@@ -17,6 +17,8 @@ mkdir -p "$STATE"
 
 # shellcheck source=bin/fm-wake-lib.sh
 . "$SCRIPT_DIR/fm-wake-lib.sh"
+# shellcheck source=bin/fm-mm-lib.sh
+. "$SCRIPT_DIR/fm-mm-lib.sh"
 
 WATCH_LOCK="$STATE/.watch.lock"
 WATCHER_STALE_GRACE=${FM_WATCHER_STALE_GRACE:-${FM_GUARD_GRACE:-300}}
@@ -211,8 +213,31 @@ EOF
   # Layer 1 backbone: pane staleness. Two consecutive identical hashes with no busy
   # signature means the crewmate finished, is waiting, or is wedged. Each distinct
   # stale state is reported once (.stale-* remembers the hash already reported).
+  #
+  # Backend: mintmux pane ids come from mm_list_panes (one "<pane>\t<session>"
+  # line per pane). tmux fallback enumerates session:window names. The hash,
+  # count, and stale files all key off the entry name so they are stable across
+  # a backend switch.
+  # Tests force the tmux branch by exporting FM_MM_FALLBACK_TMUX=1 so a live
+  # mintmux daemon in CI cannot flip the backend mid-run.
+  if [ "${FM_MM_FALLBACK_TMUX:-0}" = "1" ]; then
+    watcher_backend=tmux
+  else
+    watcher_backend=$(mm_available 2>/dev/null || echo tmux)
+  fi
+  if [ "$watcher_backend" = mintmux ]; then
+    pane_list=$(mm_list_panes | awk -F'\t' '$2 ~ /^fm-/ {print $2":"$1}' || true)
+  else
+    pane_list=$(tmux list-windows -a -F '#{session_name}:#{window_name}' 2>/dev/null | grep ':fm-' || true)
+  fi
   while IFS= read -r w; do
-    tail40=$(tmux capture-pane -p -t "$w" -S -40 2>/dev/null) || continue
+    [ -n "$w" ] || continue
+    if [ "$watcher_backend" = mintmux ]; then
+      pane_id=${w##*:}
+      tail40=$(mm_capture_pane "$pane_id" 4096 2>/dev/null || true)
+    else
+      tail40=$(tmux capture-pane -p -t "$w" -S -40 2>/dev/null || true)
+    fi
     h=$(printf '%s' "$tail40" | hash_pane)
     key=$(printf '%s' "$w" | tr ':/.' '___')
     hf="$STATE/.hash-$key"
@@ -236,7 +261,7 @@ EOF
       printf '%s' "$h" > "$hf"
       echo 0 > "$cf"
     fi
-  done < <(tmux list-windows -a -F '#{session_name}:#{window_name}' 2>/dev/null | grep ':fm-' || true)
+  done <<< "$pane_list"
 
   # Heartbeat: firstmate reviews the whole fleet at a regular cadence no matter
   # what. Time-based via .last-heartbeat mtime; interval doubles per consecutive
