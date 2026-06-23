@@ -17,23 +17,62 @@
 # Ship tasks include a project-memory section so durable project-intrinsic
 # learnings can be committed to AGENTS.md through the project's delivery path.
 # Refuses to overwrite an existing brief.
+#
+# Relevance-gated brief injection (--inject):
+#   Reads the task description (from --task-file or stdin), extracts keywords
+#   (file extensions, common verb/subsystem terms), and injects only matching
+#   tagged sections from the project's AGENTS.md plus the matching language
+#   cache entries. See AGENTS.md "Project AGENTS.md Schema" for the schema.
+#   Injection must stay under ~2s — no live network calls; lang-cache only.
 set -eu
 
 FM_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 KIND=ship
+INJECT=0
+TASK_FILE=""
 POS=()
 for a in "$@"; do
   case "$a" in
     --scout) KIND=scout ;;
+    --inject) INJECT=1 ;;
+    --task-file) shift; TASK_FILE="${1:-}" ;;
     *) POS+=("$a") ;;
   esac
 done
 ID=${POS[0]}
 REPO=${POS[1]}
 
+# Resolve project root for AGENTS.md lookup. First try projects/<repo>
+# (symlink to the local clone), then the repos themselves via data/projects.md
+# registry patterns. Fall back to a bare name lookup so injection still works
+# for repos that aren't symlinked yet.
+PROJECT_DIR="$FM_ROOT/projects/$REPO"
+if [ ! -d "$PROJECT_DIR" ]; then
+  PROJECT_DIR=""
+fi
+
 BRIEF="$FM_ROOT/data/$ID/brief.md"
 [ -e "$BRIEF" ] && { echo "error: $BRIEF already exists" >&2; exit 1; }
 mkdir -p "$FM_ROOT/data/$ID"
+
+# Read the task description if we're injecting. The captain will pass either
+# --task-file (when they have it on disk) or pipe via stdin (the common case).
+TASK_DESC=""
+if [ "$INJECT" = 1 ]; then
+  if [ -n "$TASK_FILE" ] && [ -f "$TASK_FILE" ]; then
+    TASK_DESC="$(cat "$TASK_FILE")"
+  elif [ ! -t 0 ]; then
+    TASK_DESC="$(cat)"
+  fi
+fi
+
+INJECT_BLOCK=""
+if [ "$INJECT" = 1 ]; then
+  INJECT_BLOCK="$("$FM_ROOT/bin/fm-inject-context.sh" "$REPO" "$PROJECT_DIR" "$TASK_DESC")" || {
+    echo "warn: context injection failed; writing brief without injected block" >&2
+    INJECT_BLOCK=""
+  }
+fi
 
 if [ "$KIND" = scout ]; then
 cat > "$BRIEF" <<EOF
@@ -41,7 +80,7 @@ You are a crewmate: an autonomous worker agent managed by firstmate. Work on you
 
 # Task
 {TASK}
-
+$INJECT_BLOCK
 # Setup
 You are in a disposable git worktree of $REPO, at a detached HEAD on a clean default branch.
 This is a SCOUT task: the deliverable is a written report, not a PR.
@@ -125,7 +164,7 @@ You are a crewmate: an autonomous worker agent managed by firstmate. Work on you
 
 # Task
 {TASK}
-
+$INJECT_BLOCK
 # Setup
 You are in a disposable git worktree of $REPO, at a detached HEAD on a clean default branch.
 1. First action: create your branch: \`git checkout -b fm/$ID\`$SETUP2

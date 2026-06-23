@@ -134,3 +134,47 @@ Scaffold with `bin/fm-brief.sh <id> <repo-name>` (add `--scout` for scout tasks)
 Status reporting is sparse: crewmates append only for supervisor-actionable phase changes or `needs-decision`/`blocked`/`done`/`failed`, because every append wakes firstmate.
 
 Then replace the `{TASK}` placeholder with a clear task description, acceptance criteria, and any constraints or context. Adjust other sections only when the task genuinely deviates from the standard ship-a-new-PR shape (e.g. fixing an existing external PR); the scaffold is the contract, not a suggestion.
+
+## Project AGENTS.md Schema
+
+Every project `AGENTS.md` may use tagged sections to drive relevance-gated brief injection. Tags are advisory — the schema is a recommendation, not a hard contract; crewmates add new sections as they learn.
+
+### Section format
+
+Each top-level `## <Title>` section may include a single tag line right under the heading:
+
+```markdown
+## Build & Test [tags: build, test]
+
+run `make build` then `make test`. Failures in either block the PR.
+
+## Architecture [tags: architecture, overview]
+
+Single-process Lua runtime with channel-based IPC to the renderer.
+
+## Known Quirks [tags: audio, codec]
+
+The audio thread cannot allocate; we keep a fixed-size ring buffer.
+
+## Patterns [tags: lua, error-handling]
+
+Always `pcall` user callbacks — they can throw.
+```
+
+The tag line is `[tags: <comma-separated list>]` placed immediately after the `##` heading, on the same line or the next line. Empty tag list (`[tags: ]`) means "no filter; never auto-inject".
+
+### How `bin/fm-brief.sh` uses tags
+
+1. Extract keywords from the task description: file extensions (`.go`, `.swift`, `.lua`, `.zig`, `.py`), subsystem names, and verbs.
+2. For each top-level section in the project's `AGENTS.md`, parse its tag line.
+3. Inject the section only when at least one tag intersects the keyword set. Tag matching is plain keyword intersection — no semantic similarity, no embeddings.
+4. Tag-free sections are never auto-injected; the brief stays tight. Crewmates can always read the full file via skills.
+5. For each file extension touched by the task, also inject the matching language cache entry from `~/.agent-rules/lang-cache/<lang>.md` (populated on first use by `bin/fm-lang-cache.sh`).
+
+### Recommended tag vocabulary
+
+Prefer stable, reusable tags over one-offs. Common stems: `build`, `test`, `arch`, `overview`, `lua`, `go`, `swift`, `zig`, `python`, `audio`, `video`, `channel`, `socket`, `parse`, `render`, `cli`, `db`, `concurrency`, `wasi`, `wasm`, `hot-path`. Subsystem tags get a project-specific prefix when they collide (`mintmux-channel`, `orbit-router`).
+
+### Language cache
+
+`~/.agent-rules/lang-cache/<lang>.md` holds one canonical example per language, populated lazily by `bin/fm-lang-cache.sh <lang>` via a single `githits-axi example "<canonical pattern> <language>"` call. The cache never refreshes automatically; delete a file to force re-population. Supported langs today: `go`, `swift`, `zig`, `lua`, `python`.
