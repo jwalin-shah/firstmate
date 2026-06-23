@@ -19,6 +19,23 @@ set -u
 
 FM_MM_DEFAULT_BIN_DIR="${FM_MM_DEFAULT_BIN_DIR:-/Users/jwalinshah/bin}"
 
+# Resolve this lib's location once at source time so no-filter mm_list_panes
+# can find state/ when the caller has not exported FM_ROOT. Use BASH_SOURCE
+# when present (bash, or zsh in sh/bash emulation), otherwise fall back to
+# $0 (zsh when not emulating bash). The default-value form leaves FM_ROOT
+# alone when the caller already set it (e.g. fm-watch.sh via FM_ROOT_OVERRIDE).
+if [ -z "${FM_ROOT:-}" ]; then
+  _fm_mm_self="${BASH_SOURCE[0]:-$0}"
+  if [ -n "$_fm_mm_self" ] && [ "$_fm_mm_self" != "fm-mm-lib.sh" ] && [ "$_fm_mm_self" != "sh" ]; then
+    case "$_fm_mm_self" in
+      /*) _FM_MM_LIB_DIR=$(cd "$(dirname "$_fm_mm_self")" && pwd) ;;
+      */*) _FM_MM_LIB_DIR=$(cd "$(dirname "$_fm_mm_self")" && pwd) ;;
+      *) _FM_MM_LIB_DIR=$(pwd) ;;
+    esac
+    FM_ROOT=$(cd "$_FM_MM_LIB_DIR/.." && pwd)
+  fi
+fi
+
 # Pick the mintmux binary. FM_MM_BIN wins; then ~/bin/mintmux; then PATH.
 mm_bin() {
   if [ -n "${FM_MM_BIN:-}" ] && [ -x "$FM_MM_BIN" ]; then
@@ -192,20 +209,55 @@ mm_kill_session() {
 # The meta event is "meta map[panes:[map[id:N window:M]] session:NAME]"
 # (Go's fmt %v for a map[string]any). For a fresh session there is exactly
 # one pane per window, so we pull the first id:NN and the session:NAME token.
+#
+# Substr math: `match()` reports RSTART at the START of the matched range.
+# For the "session:([^ ]+)" patterns the match starts at "s" of "session",
+# so the captured NAME begins RSTART+8 (skip "session:"). For the trailing
+# `]`-terminated form we subtract 1 extra char from the length to exclude it.
+#
+# No-filter mode: mm-ctl currently requires -session for list-panes
+# (verified: "send: cmd list_panes: session is required"). When called
+# without a session filter, enumerate fm-* sessions from state/<id>.meta
+# (recorded by fm-spawn with backend=mintmux) and call list-panes once
+# per session. state/ is the local firstmate state dir; FM_STATE_OVERRIDE
+# honors the watcher's knob, with a sensible default for direct callers.
 mm_list_panes() {
   local filter=${1:-}
   local ctl sock
   ctl=$(mm_ctl_bin) || return 1
   sock=$(mm_sock)
-  "$ctl" list-panes -sock="$sock" ${filter:+-session="$filter"} 2>/dev/null | \
-    awk '/^meta /{
-      # Extract first id:N inside panes:[map[id:N
-      pid=""; sess=""
-      if (match($0, /id:([0-9]+)/)) { pid = substr($0, RSTART+3, RLENGTH-3) }
-      if (match($0, /session:([^ ]+)\]/)) { sess = substr($0, RSTART+9, RLENGTH-10) }
-      else if (match($0, /session:([^ ]+)$/)) { sess = substr($0, RSTART+9, RLENGTH-9) }
-      if (pid != "" && sess != "") print pid "\t" sess
-    }'
+  if [ -n "$filter" ]; then
+    "$ctl" list-panes -sock="$sock" -session="$filter" 2>/dev/null | \
+      awk '/^meta /{
+        # Extract first id:N inside panes:[map[id:N
+        pid=""; sess=""
+        if (match($0, /id:([0-9]+)/)) { pid = substr($0, RSTART+3, RLENGTH-3) }
+        if (match($0, /session:([^ ]+)\]/)) { sess = substr($0, RSTART+8, RLENGTH-9) }
+        else if (match($0, /session:([^ ]+)$/)) { sess = substr($0, RSTART+8, RLENGTH-8) }
+        if (pid != "" && sess != "") print pid "\t" sess
+      }'
+    return 0
+  fi
+  # No-filter path: walk state/<id>.meta for sessions fm-spawn recorded.
+  local state_dir="${FM_STATE_OVERRIDE:-$FM_ROOT/state}"
+  [ -d "$state_dir" ] || return 0
+  local meta ses
+  for meta in "$state_dir"/*.meta; do
+    [ -f "$meta" ] || continue
+    # Only mintmux-backed tasks have a session= line. Use awk (not
+    # grep|head|cut) so the ugrep shim some shells install for `grep`
+    # doesn't inject a "N matches in M files:" summary header.
+    ses=$(awk -F= '/^session=/ { print $2; exit }' "$meta" 2>/dev/null)
+    [ -n "$ses" ] || continue
+    "$ctl" list-panes -sock="$sock" -session="$ses" 2>/dev/null | \
+      awk -v want="$ses" '/^meta /{
+        pid=""; sess=""
+        if (match($0, /id:([0-9]+)/)) { pid = substr($0, RSTART+3, RLENGTH-3) }
+        if (match($0, /session:([^ ]+)\]/)) { sess = substr($0, RSTART+8, RLENGTH-9) }
+        else if (match($0, /session:([^ ]+)$/)) { sess = substr($0, RSTART+8, RLENGTH-8) }
+        if (pid != "" && sess != "" && sess == want) print pid "\t" sess
+      }'
+  done
 }
 
 # mm_get_pane_for_session name: prints pane id for given session (or empty).
