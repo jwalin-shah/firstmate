@@ -301,10 +301,9 @@ mkdir -p "$FM_ROOT/state"
   [ "$BACKEND" = mintmux ] && echo "pane=$PANE_ID" && echo "session=$W"
 } > "$FM_ROOT/state/$ID.meta"
 
-# Append pane→task mapping for fm-status-bridge.lua.
-if [ "$BACKEND" = mintmux ]; then
-  printf '%s\t%s\n' "$PANE_ID" "$ID" >> "$FM_ROOT/state/.pane-map"
-fi
+# Status routing is self-contained: crewmates embed their task id in every
+# status line (format: "state:task-id: note"). The bridge parses it directly
+# from pane output. No external pane→task mapping needed.
 
 LAUNCH=${LAUNCH//__BRIEF__/$BRIEF}
 LAUNCH=${LAUNCH//__TURNEND__/$TURNEND}

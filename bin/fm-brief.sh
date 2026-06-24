@@ -100,11 +100,13 @@ The report is the only thing that survives, so anything worth keeping must be in
 2. Stay inside this worktree; the only files you may write outside it are the report and the status file below.
 3. Use gh-axi for GitHub operations and chrome-devtools-axi for browser operations.
 4. Report status by piping one line to both the terminal and the status file:
-   \`echo "{state}: {one short line}" | tee -a $FM_ROOT/state/$ID.status\`
+   \`echo "{state}:$ID: {one short line}" | tee -a $FM_ROOT/state/$ID.status\`
    States: working, needs-decision, blocked, done, failed.
-   Each append wakes firstmate, so report sparingly: only phase changes a supervisor
-   would act on and the needs-decision/blocked/done/failed states. No step-by-step
-   FYI progress lines; firstmate reads your pane for that.
+   The task id is baked into the line so firstmate can route it without
+   looking up which pane you're in. Each append wakes firstmate, so report
+   sparingly: only phase changes a supervisor would act on and the
+   needs-decision/blocked/done/failed states. No step-by-step FYI progress
+   lines; firstmate reads your pane for that.
 5. If you hit the same obstacle twice, append \`blocked: {why}\` and stop; firstmate will help.
 6. If a decision belongs to a human (product choices, destructive actions),
    append \`needs-decision: {summary of options}\` and stop. Firstmate will reply with the decision.
