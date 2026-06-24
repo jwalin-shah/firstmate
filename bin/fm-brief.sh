@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Scaffold a crewmate brief at data/<task-id>/brief.md with the standard
 # Setup/Rules/Definition-of-done contract filled in. Firstmate then replaces the
-# {TASK} placeholder with the task description, acceptance criteria, and context,
+# {TASK} placeholder using the Contractor pattern (data/patterns/contractor.md):
+#   Goal / Context / Inputs / Output artifact / Acceptance check / Constraints / Escalation
 # and may adjust other sections when the task genuinely deviates (e.g. working an
 # existing external PR instead of shipping a new one).
 # Usage: fm-brief.sh <task-id> <repo-name> [--scout]
@@ -79,7 +80,14 @@ cat > "$BRIEF" <<EOF
 You are a crewmate: an autonomous worker agent managed by firstmate. Work on your own; do not wait for a human.
 
 # Task
-{TASK}
+
+<!-- Contractor contract — replace each field; skip fields that don't apply -->
+Goal: {what to find or answer, one sentence}
+Context: {why this matters; link to prior session, issue, or report that motivated this}
+Inputs: {specific files, PRs, or data/<id>/report.md to start from}
+Output artifact: $FM_ROOT/data/$ID/report.md
+Acceptance check: {what a complete, useful report contains — list the required sections}
+Constraints: {what not to touch, any scope limits}
 $INJECT_BLOCK
 # Setup
 You are in a disposable git worktree of $REPO, at a detached HEAD on a clean default branch.
@@ -91,8 +99,8 @@ The report is the only thing that survives, so anything worth keeping must be in
 1. Never push to any remote and never open a PR.
 2. Stay inside this worktree; the only files you may write outside it are the report and the status file below.
 3. Use gh-axi for GitHub operations and chrome-devtools-axi for browser operations.
-4. Report status by appending one line:
-   \`echo "{state}: {one short line}" >> $FM_ROOT/state/$ID.status\`
+4. Report status by piping one line to both the terminal and the status file:
+   \`echo "{state}: {one short line}" | tee -a $FM_ROOT/state/$ID.status\`
    States: working, needs-decision, blocked, done, failed.
    Each append wakes firstmate, so report sparingly: only phase changes a supervisor
    would act on and the needs-decision/blocked/done/failed states. No step-by-step
@@ -107,7 +115,7 @@ The report must stand alone: what you did, what you found, the evidence (command
 When the report is complete, append \`done: {one-line conclusion}\` to the status file and stop.
 If your findings reveal work that should ship (e.g. you reproduced a bug and the fix is clear), say so in the report; firstmate may promote this task in place, and you would then receive mode-specific ship instructions as a follow-up message.
 EOF
-echo "scaffolded: $BRIEF (scout; replace {TASK})"
+echo "scaffolded: $BRIEF (scout; fill in Contractor fields: Goal/Context/Inputs/Acceptance check)"
 exit 0
 fi
 
@@ -163,7 +171,14 @@ cat > "$BRIEF" <<EOF
 You are a crewmate: an autonomous worker agent managed by firstmate. Work on your own; do not wait for a human.
 
 # Task
-{TASK}
+
+<!-- Contractor contract — replace each field; skip fields that don't apply -->
+Goal: {what to implement or fix, one sentence}
+Context: {why this matters; link to scout report, issue, or session that motivated this}
+Inputs: {specific files, PRs, tickets, or data/<id>/report.md to start from}
+Output artifact: PR at https://github.com/... (or branch fm/$ID for local-only)
+Acceptance check: {verifiable criteria — tests pass, PR open with CI green, etc.}
+Constraints: {what not to touch; delivery mode: $MODE}
 $INJECT_BLOCK
 # Setup
 You are in a disposable git worktree of $REPO, at a detached HEAD on a clean default branch.
@@ -173,8 +188,8 @@ You are in a disposable git worktree of $REPO, at a detached HEAD on a clean def
 $RULE1
 2. Stay inside this worktree; modify nothing outside it.
 3. Use gh-axi for GitHub operations and chrome-devtools-axi for browser operations.
-4. Report status by appending one line:
-   \`echo "{state}: {one short line}" >> $FM_ROOT/state/$ID.status\`
+4. Report status by piping one line to both the terminal and the status file:
+   \`echo "{state}: {one short line}" | tee -a $FM_ROOT/state/$ID.status\`
    States: working, needs-decision, blocked, done, failed.
    Each append wakes firstmate, so report sparingly: only phase changes a supervisor
    would act on (setup done, bug reproduced, fix implemented, validation passed) and the
@@ -191,4 +206,4 @@ Keep it proportionate: skip \`AGENTS.md\` edits for trivial tasks that produced 
 
 $DOD
 EOF
-echo "scaffolded: $BRIEF (ship, mode=$MODE; replace {TASK})"
+echo "scaffolded: $BRIEF (ship, mode=$MODE; fill in Contractor fields: Goal/Context/Inputs/Artifact/Acceptance check)"

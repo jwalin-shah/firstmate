@@ -301,6 +301,11 @@ mkdir -p "$FM_ROOT/state"
   [ "$BACKEND" = mintmux ] && echo "pane=$PANE_ID" && echo "session=$W"
 } > "$FM_ROOT/state/$ID.meta"
 
+# Append pane→task mapping for fm-status-bridge.lua.
+if [ "$BACKEND" = mintmux ]; then
+  printf '%s\t%s\n' "$PANE_ID" "$ID" >> "$FM_ROOT/state/.pane-map"
+fi
+
 LAUNCH=${LAUNCH//__BRIEF__/$BRIEF}
 LAUNCH=${LAUNCH//__TURNEND__/$TURNEND}
 LAUNCH=${LAUNCH//__PIEXT__/$FM_ROOT/state/$ID.pi-ext.ts}
@@ -347,5 +352,7 @@ case "$BACKEND" in
     ) &
     ;;
 esac
+
+command -v fm-tasks >/dev/null 2>&1 && fm-tasks start "$ID" 2>/dev/null || true
 
 echo "spawned $ID harness=$HARNESS kind=$KIND mode=$MODE yolo=$YOLO window=$T worktree=$WT backend=$BACKEND pane=$PANE_ID"

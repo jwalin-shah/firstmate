@@ -132,8 +132,14 @@ mm_ensure_daemon() {
   # Start the daemon detached. mintmux itself forks; we redirect both fds to
   # the log file. `&` is enough; nohup not needed because the session leader
   # outlives our shell.
+  # Load the status bridge Lua script at startup when present — the script
+  # must be passed at server start (-script only works at launch time).
+  local daemon_args=(-sock "$sock" -log "$log")
+  local bridge_script
+  bridge_script="${FM_ROOT:-$HOME/projects/firstmate}/bin/fm-status-bridge.lua"
+  [ -f "$bridge_script" ] && daemon_args+=(-script "$bridge_script")
   # shellcheck disable=SC2094  # log redirect; only writer is mintmux itself
-  "$bin" -sock "$sock" -log "$log" </dev/null >>"$log" 2>&1 &
+  "$bin" "${daemon_args[@]}" </dev/null >>"$log" 2>&1 &
   disown || true
 
   # Wait for the socket to come up (or fail loudly).

@@ -136,4 +136,16 @@ fi
 } >> "$LEARN_LOG"
 printf '%s\n' "📚 Learn: appended task outcome to data/learn-log.md"
 
-printf '%s\n' "🌱 Backlog: $ID just finished. Update data/backlog.md - move $ID to Done (keep Done to the 10 most recent), then re-scan Queued for items now unblocked (a \"blocked-by: $ID\" may have just cleared) or now time-due, and dispatch what's ready."
+# Mark the task done in fm-tasks (tasks.db is the durable queue; backlog.md is derived)
+if command -v fm-tasks >/dev/null 2>&1; then
+  fm-tasks done "$ID" 2>/dev/null && printf '%s\n' "✅ fm-tasks: marked $ID done" || true
+fi
+
+# Surface unblocked tasks
+UNBLOCKED=$(fm-tasks unblocked-by "$ID" 2>/dev/null || true)
+if [ -n "$UNBLOCKED" ]; then
+  printf '%s\n' "🔓 Unblocked by $ID:"
+  printf '%s\n' "$UNBLOCKED"
+fi
+
+printf '%s\n' "🌱 Queue: $ID finished — re-scan tasks.db for unblocked or time-due items and dispatch what's ready."

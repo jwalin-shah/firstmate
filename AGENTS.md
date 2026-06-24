@@ -133,7 +133,32 @@ Scaffold with `bin/fm-brief.sh <id> <repo-name>` (add `--scout` for scout tasks)
 
 Status reporting is sparse: crewmates append only for supervisor-actionable phase changes or `needs-decision`/`blocked`/`done`/`failed`, because every append wakes firstmate.
 
-Then replace the `{TASK}` placeholder with a clear task description, acceptance criteria, and any constraints or context. Adjust other sections only when the task genuinely deviates from the standard ship-a-new-PR shape (e.g. fixing an existing external PR); the scaffold is the contract, not a suggestion.
+Fill in the Contractor fields in the `# Task` section (see `data/patterns/contractor.md`):
+
+| Field | What goes here |
+|---|---|
+| **Goal** | One sentence: what to achieve, not how |
+| **Context** | Why this matters; link to the scout report, issue, or session that motivated it |
+| **Inputs** | Specific files, PRs, tickets, or `data/<id>/report.md` to start from |
+| **Output artifact** | The exact PR URL or file path to produce |
+| **Acceptance check** | Verifiable criteria — the crewmate knows what done looks like before starting |
+| **Constraints** | What not to touch; delivery mode override if any |
+
+The acceptance check is the most important field — without it, crewmates declare done prematurely. Never write a vague task block. If the goal isn't clear enough to write an acceptance check, make it a Scout task first (see `data/patterns/routing.md`).
+
+Adjust other sections only when the task genuinely deviates from the standard ship-a-new-PR shape (e.g. fixing an existing external PR); the scaffold is the contract, not a suggestion.
+
+### Agentic design patterns
+
+`data/patterns/` holds five pattern cards (from "Agentic Design Patterns", Gulli 2025). Reference before dispatching non-trivial tasks:
+
+| Card | When to read |
+|---|---|
+| `contractor.md` | Always — the 7-field contract template |
+| `routing.md` | Before classifying a task as scout vs ship vs parallel |
+| `parallelization.md` | When the captain says "across all repos" or "for each project" |
+| `reflection.md` | Before presenting high-stakes output to the captain; for any non-trivial ship task |
+| `memory.md` | When deciding where to persist a learning (AGENTS.md vs captain.md vs learn-log) |
 
 ## Project AGENTS.md Schema
 
