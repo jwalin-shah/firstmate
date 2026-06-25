@@ -101,6 +101,11 @@ esac
 
 BRIEF="$FM_ROOT/data/$ID/brief.md"
 [ -f "$BRIEF" ] || { echo "error: no brief at $BRIEF" >&2; exit 1; }
+
+# Pre-spawn pattern enforcement: validate the brief's contractor fields.
+# Warn-only — a failing pattern check never blocks the spawn, but surfaces gaps.
+"$FM_ROOT/bin/fm-pattern-check.sh" "$ID" "${KIND:+--scout}" 2>&1 | sed 's/^/  /' || true
+
 PROJ_ABS="$(cd "$PROJ" && pwd)"
 
 # Same session when firstmate already runs inside tmux; dedicated session otherwise.
