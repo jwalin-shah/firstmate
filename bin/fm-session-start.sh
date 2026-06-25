@@ -24,24 +24,40 @@ fi
 # 3. Inject agent design pattern header as context
 cat << 'PATTERNS'
 
-## Agent Design Patterns (active)
+## Agent Design Patterns (active — must follow)
 
-**Routing:** Ship (PR) vs Scout (report) vs Parallel (batch). Classify before spawning.
-**Contractor:** Goal/Context/Inputs/Artifact/Acceptance/Constraints/Escalation. 7 fields required.
-**Reflection:** Check output vs acceptance criteria. `bin/fm-reflection-check.sh <task-id>`
-**Parallel:** N independent tasks → batch dispatch (`id1=repo1 id2=repo2`).
-**Memory:** Project knowledge → AGENTS.md. Fleet knowledge → data/learn-log.md. Captain prefs → data/captain.md.
+**Routing EVERY brief.** Every spawn requires `## Routing` with Classification and Tier.
+- Unclear goal → Scout (report, not PR). Clear goal → Ship or Parallel.
+- Single repo, multi-file → Ship. N independent repos → Parallel (batch dispatch).
+- L1=1 file, L2=1 repo, L3=cross-repo, L3+=multi-repo fan-out.
+
+**Decompose L3+ Ship tasks.** Briefs > 30 lines for Ship MUST have `## Decomposition` section.
+- No 92-line monoliths. Break into independent parallel pieces.
+- See data/patterns/routing.md (Step 2) and data/patterns/parallelization.md.
+
+**Contractor:** Goal/Context/Inputs/Artifact/Acceptance/Constraints/Escalation. 7 fields.
+**Reflection:** bin/fm-reflection-check.sh checks output vs acceptance criteria.
+**Memory:** Project knowledge → AGENTS.md. Fleet → data/learn-log.md. Captain → data/captain.md.
 
 **Tool hierarchy (use in order):**
-1. `coco-axi <task>` — first call on unfamiliar tasks (unified DB: 525k transcripts, 31k code, 33k ledgers)
-2. `llm-tldr structure|calls|arch <repo>` — code analysis
-3. `memjuice recall <query>` — session history
-4. `gh-axi` — GitHub operations
-5. `rg` / `fd` / `eza` / `bat` — file ops (not cd+cat+ls)
-6. `gh` — only when gh-axi doesn't cover it
+1. coco-axi — first call on unfamiliar tasks (unified DB)
+2. llm-tldr structure|calls|arch — code analysis
+3. memjuice recall — session history
+4. gh-axi — GitHub operations
+5. rg / fd / eza / bat — file ops (not cd+cat+ls)
+6. gh — only when gh-axi doesn't cover it
 
-**Enforcement:** `fm-pattern-check.sh` blocks spawn if brief is missing contractor fields.
-Override: `FM_SKIP_PATTERN_CHECK=1 bin/fm-spawn.sh ...`
+**Enforcement:** fm-pattern-check.sh blocks spawn on:
+- Missing Routing classification (new)
+- Brief > 30 lines without Decomposition (new)
+- Missing contractor fields (existing)
+Override: FM_SKIP_PATTERN_CHECK=1 bin/fm-spawn.sh ...
 PATTERNS
+
+# 4. Write session agenda (from backlog + wakes)
+"$FM_ROOT/bin/fm-session-agenda.sh" --write 2>/dev/null || true
+
+# 5. Initialize session todos from agenda (idempotent)
+"$FM_ROOT/bin/fm-todos.sh" list >/dev/null 2>&1 || true
 
 exit 0
