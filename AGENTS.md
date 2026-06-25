@@ -160,6 +160,16 @@ Adjust other sections only when the task genuinely deviates from the standard sh
 | `reflection.md` | Before presenting high-stakes output to the captain; for any non-trivial ship task |
 | `memory.md` | When deciding where to persist a learning (AGENTS.md vs captain.md vs learn-log) |
 
+## 12. Queue architecture [tags: architecture, queue, fm-queue]
+
+`data/backlog.md` is **auto-derived**, not hand-edited. The durable source of truth is the SQLite database at `data/tasks.db` (binary: `fm-tasks` from `~/projects/orbit/cmd/fm-tasks/`), with `state/queue.json` as the parallel planning layer.
+
+- `bin/fm-queue.sh to-markdown` (alias: `--once`) reads `data/tasks.db` + `state/queue.json` and writes `data/backlog.md` atomically. Called by `bin/fm-watch.sh` on every status signal, by `bin/fm-bootstrap.sh` at session start, and by `bin/fm-session-start.sh` for the SessionStart hook. The script is idempotent: a rerun with no state change is a noop against the on-disk file.
+- `bin/fm-queue.sh --mark-done <id>` self-heals the "teardown succeeded but `fm-tasks done` failed" case. Reads `state/<id>.meta` + `state/<id>.status` + the pane list; only fires `fm-tasks done`/`fail` when all three signals agree (worktree back in pool, pane gone, status ends in `done:`/`failed:`).
+- `bin/fm-status.sh` reads the same sources and prints a TUI-free human report: services, in-flight, queue head, recent done, watcher liveness. No `mm-ctl capture` output. Wired into `bin/fm-session-start.sh`, which the captain's `~/.claude/settings.json` SessionStart hook calls.
+- The status set in SQLite is `inflight` (one word); the status set in `state/queue.json` is `in-flight` (hyphenated). `bin/fm-queue.sh to-markdown` normalizes both into the markdown `## In flight` heading. Don't write a third status convention.
+- Do not hand-edit `data/backlog.md`. If a section is wrong, fix the source (tasks.db or queue.json) and rerun `bin/fm-queue.sh to-markdown`.
+
 ## Project AGENTS.md Schema
 
 Every project `AGENTS.md` may use tagged sections to drive relevance-gated brief injection. Tags are advisory — the schema is a recommendation, not a hard contract; crewmates add new sections as they learn.

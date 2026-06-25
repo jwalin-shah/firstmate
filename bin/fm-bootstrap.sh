@@ -84,4 +84,9 @@ crew=
 [ -f "$FM_ROOT/config/crew-harness" ] && crew=$(tr -d '[:space:]' < "$FM_ROOT/config/crew-harness" || true)
 [ -n "$crew" ] && [ "$crew" != "default" ] && echo "CREW_HARNESS_OVERRIDE: $crew"
 fleet_sync
+# Refresh data/backlog.md from data/tasks.db so a fresh session starts with
+# the current in-flight/queued/done view, not whatever was on disk from the
+# last edit. Silently no-op if the SQLite store is not yet initialized;
+# the script exits 1 in that case and we don't want bootstrap to fail.
+[ -x "$FM_ROOT/bin/fm-queue.sh" ] && "$FM_ROOT/bin/fm-queue.sh" to-markdown >/dev/null 2>&1 || true
 exit 0
