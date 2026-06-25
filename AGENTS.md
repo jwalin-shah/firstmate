@@ -160,6 +160,16 @@ Adjust other sections only when the task genuinely deviates from the standard sh
 | `reflection.md` | Before presenting high-stakes output to the captain; for any non-trivial ship task |
 | `memory.md` | When deciding where to persist a learning (AGENTS.md vs captain.md vs learn-log) |
 
+**Enforcement**: Run `.agents/skills/fm-pattern-enforce` at every pre-spawn check. The `bin/fm-pattern-check.sh` script validates the contractor fields in every brief. Fix warnings before spawning unless the gap is intentional.
+
+**Tool hierarchy** (from `~/.agent-rules/TOOL_REGISTRY.md`): Before raw shell commands, use in order:
+1. `coco-axi` — first call on any unfamiliar task (searches unified DB: 525k transcripts, 31k code chunks, 33k ledgers)
+2. `llm-tldr` — code structure/arch/calls/search
+3. `memjuice` — session history recall/reason/resume
+4. `gh-axi` — all GitHub-facing work
+5. File ops (`rg`, `fd`, `eza`, `bat`) — never `cd`+`cat`+`ls`+`find`
+6. `gh` — only when gh-axi doesn't cover it
+
 ## 12. Queue architecture [tags: architecture, queue, fm-queue]
 
 `data/backlog.md` is **auto-derived**, not hand-edited. The durable source of truth is the SQLite database at `data/tasks.db` (binary: `fm-tasks` from `~/projects/orbit/cmd/fm-tasks/`), with `state/queue.json` as the parallel planning layer.

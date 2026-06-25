@@ -43,8 +43,7 @@ case "$watcher_backend" in
     ;;
 esac
 
-# Watcher liveness: how stale is .last-watcher-beat? macOS uses stat -f, Linux
-# uses stat -c; both flavors here for portability.
+# Watcher liveness: how stale is .last-watcher-beat?
 watcher_age=-1
 if [ -e "$STATE/.last-watcher-beat" ]; then
   if [ "$(uname)" = Darwin ]; then
@@ -66,7 +65,6 @@ printf '%s\n' '## Services'
 printf '%s\n' "- watcher backend: $watcher_backend"
 printf '%s\n' "- watcher state:   $watcher_state"
 printf '%s\n' "- live crewmates:  $live_panes"
-printf '%s\n' ''
 
 # fm-tasks ls --fields prints "id,kind,repo,..." per line. The
 # "tasks[N]{...}:" header from the multi-field path is suppressed by the
