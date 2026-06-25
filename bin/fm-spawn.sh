@@ -119,6 +119,20 @@ case "$ARG3" in
 esac
 
 BRIEF="$FM_ROOT/data/$ID/brief.md"
+
+# Pattern enforcement: validate brief against contractor/rifle pattern
+# Blocking by default. Pass FM_SKIP_PATTERN_CHECK=1 env to bypass (emergency override).
+if [ "${FM_SKIP_PATTERN_CHECK:-0}" != "1" ]; then
+  PATTERN_FLAG=""
+  [ "$KIND" = "scout" ] && PATTERN_FLAG="--scout"
+  if ! "$FM_ROOT/bin/fm-pattern-check.sh" "$ID" $PATTERN_FLAG 2>/dev/null; then
+    PATTERN_ISSUES=$("$FM_ROOT/bin/fm-pattern-check.sh" "$ID" $PATTERN_FLAG 2>&1 || true)
+    echo "" >&2
+    echo "PATTERN ENFORCEMENT BLOCKED SPAWN: $ID" >&2
+    echo "Fix the brief's contractor fields, or rerun with FM_SKIP_PATTERN_CHECK=1 to bypass." >&2
+    exit 1
+  fi
+fi
 [ -f "$BRIEF" ] || { echo "error: no brief at $BRIEF" >&2; exit 1; }
 PROJ_ABS="$(cd "$PROJ" && pwd)"
 
@@ -191,6 +205,7 @@ if [ "$BACKEND" = mintmux ]; then
     mm_kill_session "$W" >/dev/null 2>&1 || true
     exit 1
   fi
+  
 else
   # tmux fallback (preserved verbatim).
   if [ -n "${TMUX:-}" ]; then
@@ -223,6 +238,14 @@ else
   if [ -z "$WT" ]; then
     echo "error: treehouse get did not enter a worktree within 60s; inspect window $T" >&2
     exit 1
+||||||| 53e3dce
+# Wait for the treehouse subshell: the pane's cwd moves from the project to the worktree.
+WT=""
+for _ in $(seq 1 60); do
+  p=$(tmux display-message -p -t "$T" '#{pane_current_path}' 2>/dev/null || true)
+  if [ -n "$p" ] && [ "$p" != "$PROJ_ABS" ]; then
+    WT="$p"
+    break
   fi
 fi
 
@@ -323,12 +346,22 @@ case "$BACKEND" in
     }
     case "$LAUNCH" in /*) sleep 1.2 ;; *) sleep 0.3 ;; esac
     mm_send_blocking "$PANE_ID" "" >/dev/null || true  # literal Enter (empty line)
-    # Background: auto-accept trust/permission dialogs.
+    # Background: auto-accept trust/permission/import dialogs. First check at 2s, then
+    # 8s intervals for 3 more checks. Handles folder trust, external imports, permissions.
     (
-      for _attempt in 1 2 3 4; do
+      sleep 2
+      _pane=$(mm_capture_pane "$PANE_ID" 4096 2>/dev/null || true)
+      if printf '%s' "$_pane" | grep -qiE "trust|external.import|Allow.*imports|this folder|permission"; then
+        mm_send_blocking "$PANE_ID" "1" >/dev/null || true
+        sleep 1
+        mm_send_blocking "$PANE_ID" "" >/dev/null || true
+      fi
+      for _attempt in 1 2 3; do
         sleep 8
         _pane=$(mm_capture_pane "$PANE_ID" 4096 2>/dev/null || true)
-        if printf '%s' "$_pane" | grep -qi "trust\|Do you trust\|I trust this folder\|trust the contents"; then
+        if printf '%s' "$_pane" | grep -qiE "trust|external.import|Allow.*imports|this folder|permission"; then
+          mm_send_blocking "$PANE_ID" "1" >/dev/null || true
+          sleep 1
           mm_send_blocking "$PANE_ID" "" >/dev/null || true
         fi
       done
@@ -338,22 +371,46 @@ case "$BACKEND" in
     tmux send-keys -t "$T" -l "$LAUNCH"
     sleep 0.3
     tmux send-keys -t "$T" Enter
+||||||| 53e3dce
+tmux send-keys -t "$T" -l "$LAUNCH"
+sleep 0.3
+tmux send-keys -t "$T" Enter
 
-    # Background: auto-accept trust/permission dialogs (claude/codex/pi; opencode has none).
-    # Runs 4 checks over 32s post-launch; silently sends Enter whenever a trust prompt is
-    # visible, and exits. If no dialog appears, this is a no-op. Background subshell so
-    # it never blocks spawn.
+    # Background: auto-accept trust/permission/import dialogs (tmux fallback).
+    # First check at 2s, then 8s for 3 more checks.
     (
-      for _attempt in 1 2 3 4; do
+      _pane=$(tmux capture-pane -t "$T" -p 2>/dev/null || true)
+      if printf '%s' "$_pane" | grep -qiE "trust|external.import|Allow.*imports|this folder|permission"; then
+        tmux send-keys -t "$T" "1" Enter
+        sleep 1
+        tmux send-keys -t "$T" "" Enter
+      fi
+      for _attempt in 1 2 3; do
         sleep 8
         _pane=$(tmux capture-pane -t "$T" -p 2>/dev/null || true)
-        if printf '%s' "$_pane" | grep -qi "trust\|Do you trust\|I trust this folder\|trust the contents"; then
+        if printf '%s' "$_pane" | grep -qiE "trust|external.import|Allow.*imports|this folder|permission"; then
+          tmux send-keys -t "$T" "1" Enter
+          sleep 1
           tmux send-keys -t "$T" "" Enter
         fi
       done
     ) &
     ;;
 esac
+||||||| 53e3dce
+# Background: auto-accept trust/permission dialogs (claude/codex/pi; opencode has none).
+# Runs 4 checks over 32s post-launch; silently sends Enter whenever a trust prompt is
+# visible, and exits. If no dialog appears, this is a no-op. Background subshell so
+# it never blocks spawn.
+(
+  for _attempt in 1 2 3 4; do
+    sleep 8
+    _pane=$(tmux capture-pane -t "$T" -p 2>/dev/null || true)
+    if printf '%s' "$_pane" | grep -qi "trust\|Do you trust\|I trust this folder\|trust the contents"; then
+      tmux send-keys -t "$T" "" Enter
+    fi
+  done
+) &
 
 command -v fm-tasks >/dev/null 2>&1 && fm-tasks start "$ID" 2>/dev/null || true
 
