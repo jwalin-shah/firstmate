@@ -338,9 +338,17 @@ case "$BACKEND" in
     }
     case "$LAUNCH" in /*) sleep 1.2 ;; *) sleep 0.3 ;; esac
     mm_send_blocking "$PANE_ID" "" >/dev/null || true  # literal Enter (empty line)
-    # Background: auto-accept trust/permission dialogs.
+    # Background: auto-accept trust/permission dialogs. First check at 2s (trust
+    # dialog appears immediately after launch), then 8s intervals for 3 more checks.
     (
-      for _attempt in 1 2 3 4; do
+      sleep 2
+      _pane=$(mm_capture_pane "$PANE_ID" 4096 2>/dev/null || true)
+      if printf '%s' "$_pane" | grep -qi "trust\|Do you trust\|I trust this folder\|trust the contents"; then
+        mm_send_blocking "$PANE_ID" "1" >/dev/null || true
+        sleep 1
+        mm_send_blocking "$PANE_ID" "" >/dev/null || true
+      fi
+      for _attempt in 1 2 3; do
         sleep 8
         _pane=$(mm_capture_pane "$PANE_ID" 4096 2>/dev/null || true)
         if printf '%s' "$_pane" | grep -qi "trust\|Do you trust\|I trust this folder\|trust the contents"; then
