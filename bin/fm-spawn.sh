@@ -171,7 +171,6 @@ if [ "$BACKEND" = mintmux ]; then
     exit 1
   }
 
-<<<<<<< HEAD
   # treehouse get opens an interactive subshell (it does NOT exit on its own;
   # the agent harness that follows must `cd $WT && exec zsh` to take over).
   # Inside that subshell, send a `pwd` so the worktree's absolute path lands
@@ -247,74 +246,6 @@ for _ in $(seq 1 60); do
   if [ -n "$p" ] && [ "$p" != "$PROJ_ABS" ]; then
     WT="$p"
     break
-=======
-  # treehouse get opens an interactive subshell (it does NOT exit on its own;
-  # the agent harness that follows must `cd $WT && exec zsh` to take over).
-  # Inside that subshell, send a `pwd` so the worktree's absolute path lands
-  # on a line of its own - the prompt's cwd prefix is not parseable, so we
-  # force a real pwd. The path is the only one on a /-rooted line in the
-  # captured pane (the seed shell's PROJ_ABS is filtered out below).
-  sleep 0.5
-  mm_send_blocking "$PANE_ID" "pwd" >/dev/null || true
-
-  # Wait for the worktree: treehouse get prints the worktree path on success.
-  # The seed shell starts in PROJ_ABS; after treehouse get it cd's into the
-  # worktree, so the shell prompt's CWD shifts. We capture the pane and look
-  # for a fresh path that is not PROJ_ABS (treehouse worktrees live under
-  # ~/.treehouse/<repo>/<slot>, never under PROJ_ABS).
-  WT=""
-  for _ in $(seq 1 60); do
-    cap=$(mm_capture_pane "$PANE_ID" 4096 2>/dev/null || true)
-    # Strip ANSI / CR and look for a /-rooted absolute path that isn't PROJ_ABS.
-    # We sent `pwd` inside the treehouse subshell, so the worktree path lands
-    # on a /-rooted line on its own. The seed shell's PROJ_ABS is filtered out
-    # so we never mistake the project root for a worktree.
-    cand=$(printf '%s' "$cap" | tr -d '\r' | sed -E 's/\x1b\[[0-9;]*[A-Za-z]//g' \
-      | grep -E '^/[^ ]+$' | grep -v "^$PROJ_ABS\$" | tail -1 || true)
-    if [ -n "$cand" ] && [ -d "$cand" ]; then
-      WT="$cand"
-      break
-    fi
-    sleep 1
-  done
-  if [ -z "$WT" ]; then
-    echo "error: treehouse get did not enter a worktree within 60s; inspect session $W pane $PANE_ID" >&2
-    mm_kill_session "$W" >/dev/null 2>&1 || true
-    exit 1
-  fi
-else
-  # tmux fallback (preserved verbatim).
-  if [ -n "${TMUX:-}" ]; then
-    SES=$(tmux display-message -p '#S')
-  else
-    tmux has-session -t firstmate 2>/dev/null || tmux new-session -d -s firstmate
-    SES=firstmate
-  fi
-
-  W="fm-$ID"
-  T="$SES:$W"
-  if tmux list-windows -t "$SES" -F '#{window_name}' | grep -qx "$W"; then
-    echo "error: window $T already exists" >&2
-    exit 1
-  fi
-
-  tmux new-window -d -t "$SES" -n "$W" -c "$PROJ_ABS"
-  tmux send-keys -t "$T" 'treehouse get' Enter
-
-  # Wait for the treehouse subshell: the pane's cwd moves from the project to the worktree.
-  WT=""
-  for _ in $(seq 1 60); do
-    p=$(tmux display-message -p -t "$T" '#{pane_current_path}' 2>/dev/null || true)
-    if [ -n "$p" ] && [ "$p" != "$PROJ_ABS" ]; then
-      WT="$p"
-      break
-    fi
-    sleep 1
-  done
-  if [ -z "$WT" ]; then
-    echo "error: treehouse get did not enter a worktree within 60s; inspect window $T" >&2
-    exit 1
->>>>>>> origin/main
   fi
 fi
 
@@ -403,7 +334,6 @@ mkdir -p "$FM_ROOT/state"
 LAUNCH=${LAUNCH//__BRIEF__/$BRIEF}
 LAUNCH=${LAUNCH//__TURNEND__/$TURNEND}
 LAUNCH=${LAUNCH//__PIEXT__/$FM_ROOT/state/$ID.pi-ext.ts}
-<<<<<<< HEAD
 case "$BACKEND" in
   mintmux)
     # mm-send appends a newline by default; that submits the launch command.
@@ -445,37 +375,7 @@ case "$BACKEND" in
 tmux send-keys -t "$T" -l "$LAUNCH"
 sleep 0.3
 tmux send-keys -t "$T" Enter
-=======
-case "$BACKEND" in
-  mintmux)
-    # mm-send appends a newline by default; that submits the launch command.
-    # Slash commands open a completion popup in some TUIs (verified on codex);
-    # submitting too fast selects nothing, so the same 1.2s grace tmux used.
-    mm_send_blocking "$PANE_ID" "$LAUNCH" >/dev/null || {
-      echo "error: mintmux send launch to pane $PANE_ID failed" >&2
-      mm_kill_session "$W" >/dev/null 2>&1 || true
-      exit 1
-    }
-    case "$LAUNCH" in /*) sleep 1.2 ;; *) sleep 0.3 ;; esac
-    mm_send_blocking "$PANE_ID" "" >/dev/null || true  # literal Enter (empty line)
-    # Background: auto-accept trust/permission dialogs.
-    (
-      for _attempt in 1 2 3 4; do
-        sleep 8
-        _pane=$(mm_capture_pane "$PANE_ID" 4096 2>/dev/null || true)
-        if printf '%s' "$_pane" | grep -qi "trust\|Do you trust\|I trust this folder\|trust the contents"; then
-          mm_send_blocking "$PANE_ID" "" >/dev/null || true
-        fi
-      done
-    ) &
-    ;;
-  *)
-    tmux send-keys -t "$T" -l "$LAUNCH"
-    sleep 0.3
-    tmux send-keys -t "$T" Enter
->>>>>>> origin/main
 
-<<<<<<< HEAD
     # Background: auto-accept trust/permission/import dialogs (tmux fallback).
     # First check at 2s, then 8s for 3 more checks.
     (
@@ -511,23 +411,6 @@ esac
     fi
   done
 ) &
-=======
-    # Background: auto-accept trust/permission dialogs (claude/codex/pi; opencode has none).
-    # Runs 4 checks over 32s post-launch; silently sends Enter whenever a trust prompt is
-    # visible, and exits. If no dialog appears, this is a no-op. Background subshell so
-    # it never blocks spawn.
-    (
-      for _attempt in 1 2 3 4; do
-        sleep 8
-        _pane=$(tmux capture-pane -t "$T" -p 2>/dev/null || true)
-        if printf '%s' "$_pane" | grep -qi "trust\|Do you trust\|I trust this folder\|trust the contents"; then
-          tmux send-keys -t "$T" "" Enter
-        fi
-      done
-    ) &
-    ;;
-esac
->>>>>>> origin/main
 
 command -v fm-tasks >/dev/null 2>&1 && fm-tasks start "$ID" 2>/dev/null || true
 
