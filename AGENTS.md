@@ -133,4 +133,73 @@ Scaffold with `bin/fm-brief.sh <id> <repo-name>` (add `--scout` for scout tasks)
 
 Status reporting is sparse: crewmates append only for supervisor-actionable phase changes or `needs-decision`/`blocked`/`done`/`failed`, because every append wakes firstmate.
 
-Then replace the `{TASK}` placeholder with a clear task description, acceptance criteria, and any constraints or context. Adjust other sections only when the task genuinely deviates from the standard ship-a-new-PR shape (e.g. fixing an existing external PR); the scaffold is the contract, not a suggestion.
+Fill in the Contractor fields in the `# Task` section (see `data/patterns/contractor.md`):
+
+| Field | What goes here |
+|---|---|
+| **Goal** | One sentence: what to achieve, not how |
+| **Context** | Why this matters; link to the scout report, issue, or session that motivated it |
+| **Inputs** | Specific files, PRs, tickets, or `data/<id>/report.md` to start from |
+| **Output artifact** | The exact PR URL or file path to produce |
+| **Acceptance check** | Verifiable criteria — the crewmate knows what done looks like before starting |
+| **Constraints** | What not to touch; delivery mode override if any |
+
+The acceptance check is the most important field — without it, crewmates declare done prematurely. Never write a vague task block. If the goal isn't clear enough to write an acceptance check, make it a Scout task first (see `data/patterns/routing.md`).
+
+Adjust other sections only when the task genuinely deviates from the standard ship-a-new-PR shape (e.g. fixing an existing external PR); the scaffold is the contract, not a suggestion.
+
+### Agentic design patterns
+
+`data/patterns/` holds five pattern cards (from "Agentic Design Patterns", Gulli 2025). Reference before dispatching non-trivial tasks:
+
+| Card | When to read |
+|---|---|
+| `contractor.md` | Always — the 7-field contract template |
+| `routing.md` | Before classifying a task as scout vs ship vs parallel |
+| `parallelization.md` | When the captain says "across all repos" or "for each project" |
+| `reflection.md` | Before presenting high-stakes output to the captain; for any non-trivial ship task |
+| `memory.md` | When deciding where to persist a learning (AGENTS.md vs captain.md vs learn-log) |
+
+## Project AGENTS.md Schema
+
+Every project `AGENTS.md` may use tagged sections to drive relevance-gated brief injection. Tags are advisory — the schema is a recommendation, not a hard contract; crewmates add new sections as they learn.
+
+### Section format
+
+Each top-level `## <Title>` section may include a single tag line right under the heading:
+
+```markdown
+## Build & Test [tags: build, test]
+
+run `make build` then `make test`. Failures in either block the PR.
+
+## Architecture [tags: architecture, overview]
+
+Single-process Lua runtime with channel-based IPC to the renderer.
+
+## Known Quirks [tags: audio, codec]
+
+The audio thread cannot allocate; we keep a fixed-size ring buffer.
+
+## Patterns [tags: lua, error-handling]
+
+Always `pcall` user callbacks — they can throw.
+```
+
+The tag line is `[tags: <comma-separated list>]` placed immediately after the `##` heading, on the same line or the next line. Empty tag list (`[tags: ]`) means "no filter; never auto-inject".
+
+### How `bin/fm-brief.sh` uses tags
+
+1. Extract keywords from the task description: file extensions (`.go`, `.swift`, `.lua`, `.zig`, `.py`), subsystem names, and verbs.
+2. For each top-level section in the project's `AGENTS.md`, parse its tag line.
+3. Inject the section only when at least one tag intersects the keyword set. Tag matching is plain keyword intersection — no semantic similarity, no embeddings.
+4. Tag-free sections are never auto-injected; the brief stays tight. Crewmates can always read the full file via skills.
+5. For each file extension touched by the task, also inject the matching language cache entry from `~/.agent-rules/lang-cache/<lang>.md` (populated on first use by `bin/fm-lang-cache.sh`).
+
+### Recommended tag vocabulary
+
+Prefer stable, reusable tags over one-offs. Common stems: `build`, `test`, `arch`, `overview`, `lua`, `go`, `swift`, `zig`, `python`, `audio`, `video`, `channel`, `socket`, `parse`, `render`, `cli`, `db`, `concurrency`, `wasi`, `wasm`, `hot-path`. Subsystem tags get a project-specific prefix when they collide (`mintmux-channel`, `orbit-router`).
+
+### Language cache
+
+`~/.agent-rules/lang-cache/<lang>.md` holds one canonical example per language, populated lazily by `bin/fm-lang-cache.sh <lang>` via a single `githits-axi example "<canonical pattern> <language>"` call. The cache never refreshes automatically; delete a file to force re-population. Supported langs today: `go`, `swift`, `zig`, `lua`, `python`.
