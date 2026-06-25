@@ -123,8 +123,10 @@ BRIEF="$FM_ROOT/data/$ID/brief.md"
 # Pattern enforcement: validate brief against contractor/rifle pattern
 # Blocking by default. Pass FM_SKIP_PATTERN_CHECK=1 env to bypass (emergency override).
 if [ "${FM_SKIP_PATTERN_CHECK:-0}" != "1" ]; then
-  if ! "$FM_ROOT/bin/fm-pattern-check.sh" "$ID" ${KIND:+--"$KIND"} 2>/dev/null; then
-    PATTERN_ISSUES=$("$FM_ROOT/bin/fm-pattern-check.sh" "$ID" ${KIND:+--"$KIND"} 2>&1 || true)
+  PATTERN_FLAG=""
+  [ "$KIND" = "scout" ] && PATTERN_FLAG="--scout"
+  if ! "$FM_ROOT/bin/fm-pattern-check.sh" "$ID" $PATTERN_FLAG 2>/dev/null; then
+    PATTERN_ISSUES=$("$FM_ROOT/bin/fm-pattern-check.sh" "$ID" $PATTERN_FLAG 2>&1 || true)
     echo "" >&2
     echo "PATTERN ENFORCEMENT BLOCKED SPAWN: $ID" >&2
     echo "Fix the brief's contractor fields, or rerun with FM_SKIP_PATTERN_CHECK=1 to bypass." >&2
