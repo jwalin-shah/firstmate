@@ -31,7 +31,7 @@ if [ "${1:-}" = "--checklist" ] || [ -z "${1:-}" ]; then
   echo "□ Parallelization check: any independent subtasks that could ship in parallel?"
   echo "□ Reflection trigger: any review/test/docs that needs explicit attention?"
   echo ""
-  echo "Pattern cards: data/patterns/{$(IFS=,; echo "${REQUIRED_PATTERNS[*[*]}" 2>/dev/null || echo "${REQUIRED_PATTERNS[*]}")}.md"
+  echo "Pattern cards: data/patterns/{contractor,memory,routing,parallelization,reflection}.md"
   exit 0
 fi
 
