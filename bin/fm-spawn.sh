@@ -338,12 +338,12 @@ case "$BACKEND" in
     }
     case "$LAUNCH" in /*) sleep 1.2 ;; *) sleep 0.3 ;; esac
     mm_send_blocking "$PANE_ID" "" >/dev/null || true  # literal Enter (empty line)
-    # Background: auto-accept trust/permission dialogs. First check at 2s (trust
-    # dialog appears immediately after launch), then 8s intervals for 3 more checks.
+    # Background: auto-accept trust/permission/import dialogs. First check at 2s, then
+    # 8s intervals for 3 more checks. Handles folder trust, external imports, permissions.
     (
       sleep 2
       _pane=$(mm_capture_pane "$PANE_ID" 4096 2>/dev/null || true)
-      if printf '%s' "$_pane" | grep -qi "trust\|Do you trust\|I trust this folder\|trust the contents"; then
+      if printf '%s' "$_pane" | grep -qiE "trust|external.import|Allow.*imports|this folder|permission"; then
         mm_send_blocking "$PANE_ID" "1" >/dev/null || true
         sleep 1
         mm_send_blocking "$PANE_ID" "" >/dev/null || true
@@ -351,7 +351,9 @@ case "$BACKEND" in
       for _attempt in 1 2 3; do
         sleep 8
         _pane=$(mm_capture_pane "$PANE_ID" 4096 2>/dev/null || true)
-        if printf '%s' "$_pane" | grep -qi "trust\|Do you trust\|I trust this folder\|trust the contents"; then
+        if printf '%s' "$_pane" | grep -qiE "trust|external.import|Allow.*imports|this folder|permission"; then
+          mm_send_blocking "$PANE_ID" "1" >/dev/null || true
+          sleep 1
           mm_send_blocking "$PANE_ID" "" >/dev/null || true
         fi
       done
@@ -362,15 +364,21 @@ case "$BACKEND" in
     sleep 0.3
     tmux send-keys -t "$T" Enter
 
-    # Background: auto-accept trust/permission dialogs (claude/codex/pi; opencode has none).
-    # Runs 4 checks over 32s post-launch; silently sends Enter whenever a trust prompt is
-    # visible, and exits. If no dialog appears, this is a no-op. Background subshell so
-    # it never blocks spawn.
+    # Background: auto-accept trust/permission/import dialogs (tmux fallback).
+    # First check at 2s, then 8s for 3 more checks.
     (
-      for _attempt in 1 2 3 4; do
+      _pane=$(tmux capture-pane -t "$T" -p 2>/dev/null || true)
+      if printf '%s' "$_pane" | grep -qiE "trust|external.import|Allow.*imports|this folder|permission"; then
+        tmux send-keys -t "$T" "1" Enter
+        sleep 1
+        tmux send-keys -t "$T" "" Enter
+      fi
+      for _attempt in 1 2 3; do
         sleep 8
         _pane=$(tmux capture-pane -t "$T" -p 2>/dev/null || true)
-        if printf '%s' "$_pane" | grep -qi "trust\|Do you trust\|I trust this folder\|trust the contents"; then
+        if printf '%s' "$_pane" | grep -qiE "trust|external.import|Allow.*imports|this folder|permission"; then
+          tmux send-keys -t "$T" "1" Enter
+          sleep 1
           tmux send-keys -t "$T" "" Enter
         fi
       done
