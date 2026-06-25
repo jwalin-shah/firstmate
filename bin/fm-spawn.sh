@@ -89,7 +89,7 @@ launch_template() {
   # shellcheck disable=SC2016  # single quotes are deliberate: $(cat ...) expands in the crewmate pane, not here
   case "$1" in
     claude) printf '%s' 'claude --dangerously-skip-permissions "$(cat __BRIEF__)"' ;;
-    pioneer) printf '%s' 'cpion "$(cat __BRIEF__)"' ;;
+    cpion) printf '%s' 'claude-launch run pioneer --dangerously-skip-permissions --model claude-opus-4-8 "$(cat __BRIEF__)"' ;;
     cb) printf '%s' 'cb "$(cat __BRIEF__)"' ;;
     ctoken) printf '%s' 'ctoken "$(cat __BRIEF__)"' ;;
     cursor-agent) printf '%s' 'cursor-agent "$(cat __BRIEF__)"' ;;
@@ -126,6 +126,9 @@ PROJ_ABS="$(cd "$PROJ" && pwd)"
 # mintmux server if the socket is missing; if mintmux is genuinely unavailable,
 # fall back to tmux. The legacy tmux path is preserved verbatim for that branch.
 BACKEND=$(mm_ensure_daemon) || exit 1
+# PANE_ID is only assigned on the mintmux path below; default it so the final
+# summary echo and meta writer don't trip `set -u` on the tmux backend.
+PANE_ID=""
 
 if [ "$BACKEND" = mintmux ]; then
   W="fm-$ID"
@@ -235,7 +238,7 @@ exclude_path() {
   grep -qxF "$rel" "$EXCL" 2>/dev/null || echo "$rel" >> "$EXCL"
 }
 case "$HARNESS" in
-  claude*|pioneer|cb|ctoken)
+  claude*|cpion|cb|ctoken)
     mkdir -p "$WT/.claude"
     cat > "$WT/.claude/settings.local.json" <<EOF
 {"hooks":{"Stop":[{"hooks":[{"type":"command","command":"touch '$TURNEND'"}]}]}}

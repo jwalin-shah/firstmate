@@ -102,22 +102,32 @@ mm_available() {
 # the backend ("mintmux" or "tmux") on stdout. When started, returns after a
 # successful ping.
 mm_ensure_daemon() {
-  local backend
-  if ! backend=$(mm_available); then
+  # Forced tmux fallback wins outright.
+  if [ "${FM_MM_FALLBACK_TMUX:-0}" = "1" ]; then
+    if command -v tmux >/dev/null 2>&1; then
+      printf '%s\n' "tmux"; return 0
+    fi
+    echo "error: FM_MM_FALLBACK_TMUX=1 but tmux is not installed" >&2
+    return 1
+  fi
+
+  local bin sock log ctl
+  bin=$(mm_bin)
+  ctl=$(mm_ctl_bin)
+  sock=$(mm_sock)
+  log=$(mm_log)
+
+  # Decide on the mintmux binary's PRESENCE, not on a live socket. Checking
+  # mm_available here was the bug: it only reports "mintmux" once the socket is
+  # already up, so this function — whose whole job is to START the daemon —
+  # could never reach its own start path and always fell through to tmux.
+  if [ -z "$bin" ] || [ -z "$ctl" ]; then
+    if command -v tmux >/dev/null 2>&1; then
+      printf '%s\n' "tmux"; return 0
+    fi
     echo "error: neither mintmux nor tmux is available; install one (see bin/fm-bootstrap.sh)" >&2
     return 1
   fi
-  if [ "$backend" = "tmux" ]; then
-    printf '%s\n' "tmux"
-    return 0
-  fi
-
-  local bin sock log
-  bin=$(mm_bin)
-  sock=$(mm_sock)
-  log=$(mm_log)
-  local ctl
-  ctl=$(mm_ctl_bin)
 
   if "$ctl" ping -sock="$sock" >/dev/null 2>&1; then
     printf '%s\n' "mintmux"
@@ -140,7 +150,7 @@ mm_ensure_daemon() {
   [ -f "$bridge_script" ] && daemon_args+=(-script "$bridge_script")
   # shellcheck disable=SC2094  # log redirect; only writer is mintmux itself
   "$bin" "${daemon_args[@]}" </dev/null >>"$log" 2>&1 &
-  disown || true
+  disown 2>/dev/null || true
 
   # Wait for the socket to come up (or fail loudly).
   for _ in $(seq 1 50); do
@@ -150,7 +160,14 @@ mm_ensure_daemon() {
     fi
     sleep 0.1
   done
-  echo "error: mintmux daemon failed to start; see $log" >&2
+  # Daemon would not come up. Don't hard-fail the spawn — fall back to tmux so
+  # crewmates can still launch, and leave a breadcrumb to the log.
+  if command -v tmux >/dev/null 2>&1; then
+    echo "warning: mintmux daemon failed to start (see $log); falling back to tmux" >&2
+    printf '%s\n' "tmux"
+    return 0
+  fi
+  echo "error: mintmux daemon failed to start and tmux unavailable; see $log" >&2
   return 1
 }
 
