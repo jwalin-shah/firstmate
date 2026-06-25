@@ -121,7 +121,16 @@ esac
 BRIEF="$FM_ROOT/data/$ID/brief.md"
 
 # Pattern enforcement: validate brief against contractor/rifle pattern
-"$FM_ROOT/bin/fm-pattern-check.sh" "$ID" ${KIND:+--"$KIND"} 2>/dev/null || true  # warn-only, non-blocking
+# Blocking by default. Pass FM_SKIP_PATTERN_CHECK=1 env to bypass (emergency override).
+if [ "${FM_SKIP_PATTERN_CHECK:-0}" != "1" ]; then
+  if ! "$FM_ROOT/bin/fm-pattern-check.sh" "$ID" ${KIND:+--"$KIND"} 2>/dev/null; then
+    PATTERN_ISSUES=$("$FM_ROOT/bin/fm-pattern-check.sh" "$ID" ${KIND:+--"$KIND"} 2>&1 || true)
+    echo "" >&2
+    echo "PATTERN ENFORCEMENT BLOCKED SPAWN: $ID" >&2
+    echo "Fix the brief's contractor fields, or rerun with FM_SKIP_PATTERN_CHECK=1 to bypass." >&2
+    exit 1
+  fi
+fi
 [ -f "$BRIEF" ] || { echo "error: no brief at $BRIEF" >&2; exit 1; }
 PROJ_ABS="$(cd "$PROJ" && pwd)"
 

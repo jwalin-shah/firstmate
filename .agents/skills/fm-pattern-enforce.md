@@ -10,6 +10,8 @@ Wired into every spawn and teardown to enforce the agent design patterns from da
    - N independent repos → Parallel (batch dispatch).
 
 2. **Contractor** — does the brief have all 7 fields filled? (data/patterns/contractor.md)
+   - **Enforced**: `bin/fm-pattern-check.sh <id>` runs in `fm-spawn.sh` — **blocks spawn** on missing fields
+   - Override: `FM_SKIP_PATTERN_CHECK=1 bin/fm-spawn.sh ...` (emergency only)
    - Goal: one sentence, what not how
    - Context: why it matters, link to source
    - Inputs: specific files/PRs/reports
