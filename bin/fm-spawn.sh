@@ -119,6 +119,9 @@ case "$ARG3" in
 esac
 
 BRIEF="$FM_ROOT/data/$ID/brief.md"
+
+# Pattern enforcement: validate brief against contractor/rifle pattern
+"$FM_ROOT/bin/fm-pattern-check.sh" "$ID" ${KIND:+--"$KIND"} 2>/dev/null || true  # warn-only, non-blocking
 [ -f "$BRIEF" ] || { echo "error: no brief at $BRIEF" >&2; exit 1; }
 PROJ_ABS="$(cd "$PROJ" && pwd)"
 
