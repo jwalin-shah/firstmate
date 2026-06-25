@@ -205,7 +205,6 @@ if [ "$BACKEND" = mintmux ]; then
     mm_kill_session "$W" >/dev/null 2>&1 || true
     exit 1
   fi
-  sleep 1 # settle treehouse subshell before launch 
   
 else
   # tmux fallback (preserved verbatim).
@@ -332,7 +331,8 @@ case "$BACKEND" in
     # mm-send appends a newline by default; that submits the launch command.
     # Slash commands open a completion popup in some TUIs (verified on codex);
     # submitting too fast selects nothing, so the same 1.2s grace tmux used.
-    mm_send_blocking "$PANE_ID" "$LAUNCH" >/dev/null || {
+    WRAPPED_LAUNCH="cd \"$WT\" && exec $LAUNCH"
+    mm_send_blocking "$PANE_ID" "$WRAPPED_LAUNCH" >/dev/null || {
       echo "error: mintmux send launch to pane $PANE_ID failed" >&2
       mm_kill_session "$W" >/dev/null 2>&1 || true
       exit 1
