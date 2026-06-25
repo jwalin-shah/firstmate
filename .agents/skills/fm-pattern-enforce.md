@@ -25,9 +25,12 @@ Wired into every spawn and teardown to enforce the agent design patterns from da
 ## Post-done checklist (run after crewmate says done)
 
 4. **Reflection** — critic pass (data/patterns/reflection.md)
+   - **Automated**: `bin/fm-reflection-check.sh <task-id>` verifies output vs acceptance criteria
+   - **Wired**: runs automatically in `fm-teardown.sh` before learn-log append
    - For small tasks: self-review the status output
-   - For high-stakes: spawn a critic scout
+   - For high-stakes: spawn a critic scout (Option B)
    - Always check: does output satisfy the acceptance check?
+   - Flags: missing PR URL (ship tasks), key terms absent from status
 
 5. **Memory persistence** (data/patterns/memory.md)
    - Did the crewmate produce durable project knowledge?
