@@ -90,6 +90,29 @@ if [ -d "$WT" ] && [ "$FORCE" != "--force" ]; then
   fi
 fi
 
+# Capture learn-log signals BEFORE the worktree is returned (line ~107) and state is
+# cleared (the status file is removed below). Three signals decide whether the task
+# produced anything worth recording:
+#   (a) STATUS_MEANINGFUL - the status file carries non-whitespace content
+#   (b) HAD_COMMITS        - the crewmate created commits beyond the worktree's base
+#   (c) a scout report     - checked later (data/ is not cleared by teardown)
+# When all three are absent the task produced nothing, so the learn-log append is
+# skipped. LAST_STATUS is captured here too because the status file is deleted before
+# the learn block runs.
+STATUS_FILE="$STATE/$ID.status"
+LAST_STATUS=$(tail -1 "$STATUS_FILE" 2>/dev/null || echo "no status")
+STATUS_MEANINGFUL=""
+if [ -s "$STATUS_FILE" ] && grep -q '[^[:space:]]' "$STATUS_FILE" 2>/dev/null; then
+  STATUS_MEANINGFUL=1
+fi
+HAD_COMMITS=""
+if [ -d "$WT" ]; then
+  LEARN_DEFAULT=$(default_branch 2>/dev/null || true)
+  if [ -n "$LEARN_DEFAULT" ]; then
+    HAD_COMMITS=$(git -C "$WT" log --oneline HEAD --not "$LEARN_DEFAULT" -- 2>/dev/null | head -1 || true)
+  fi
+fi
+
 # Best-effort: drop the local task branch so the shared repo does not accumulate refs.
 if [ -d "$WT" ]; then
   branch=$(git -C "$WT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo HEAD)
@@ -127,23 +150,31 @@ else
   printf '%s\n' "$REFLECTION_ISSUES" | head -5
 fi
 
-# Post-task learn: append a structured entry to data/captain.md and data/learn-log.md
-# Pull the last status line and any report summary as the learning record.
+# Post-task learn: append a structured entry to data/learn-log.md, but only when the
+# task produced meaningful outcome data. Skip when the status file had no content, no
+# scout report exists, and the crewmate made no commits beyond its base - an empty or
+# aborted task has nothing to learn from. LAST_STATUS / STATUS_MEANINGFUL / HAD_COMMITS
+# were captured above, before the worktree and status file were cleared.
 LEARN_LOG="$FM_ROOT/data/learn-log.md"
-LAST_STATUS=$(tail -1 "$STATE/$ID.status" 2>/dev/null || echo "no status")
 REPORT_SUMMARY=""
+HAS_REPORT=""
 if [ -f "$FM_ROOT/data/$ID/report.md" ]; then
+  HAS_REPORT=1
   REPORT_SUMMARY=$(head -5 "$FM_ROOT/data/$ID/report.md" 2>/dev/null || true)
 fi
-{
-  echo ""
-  echo "## $(date -u +%Y-%m-%d) — $ID ($KIND, $MODE)"
-  echo "project: $PROJ"
-  echo "outcome: $LAST_STATUS"
-  [ -n "$REPORT_SUMMARY" ] && printf 'report-summary: %s\n' "$REPORT_SUMMARY"
-  echo "---"
-} >> "$LEARN_LOG"
-printf '%s\n' "📚 Learn: appended task outcome to data/learn-log.md"
+if [ -z "$STATUS_MEANINGFUL" ] && [ -z "$HAS_REPORT" ] && [ -z "$HAD_COMMITS" ]; then
+  printf '%s\n' "📚 Learn: skipped — task $ID produced no status, report, or commits"
+else
+  {
+    echo ""
+    echo "## $(date -u +%Y-%m-%d) — $ID ($KIND, $MODE)"
+    echo "project: $PROJ"
+    echo "outcome: $LAST_STATUS"
+    [ -n "$REPORT_SUMMARY" ] && printf 'report-summary: %s\n' "$REPORT_SUMMARY"
+    echo "---"
+  } >> "$LEARN_LOG"
+  printf '%s\n' "📚 Learn: appended task outcome to data/learn-log.md"
+fi
 
 # Mark the task done in fm-tasks (tasks.db is the durable queue; backlog.md is derived)
 if command -v fm-tasks >/dev/null 2>&1; then
