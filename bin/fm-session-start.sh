@@ -2,7 +2,8 @@
 # bin/fm-session-start.sh — SessionStart hook for firstmate.
 # Wired from ~/.claude/settings.json hooks.SessionStart.
 # Must complete within 5s timeout. Silent exit 0 on success.
-# Injects agent design pattern reminders as additionalContext.
+# Combines: backlog regeneration, status report, pattern injection,
+# session agenda + track init — all in one shot.
 set -u
 
 FM_ROOT="${CLAUDE_PROJECT_DIR:-}"
@@ -21,27 +22,22 @@ if [ -f "state/.wake-queue" ] && [ -s "state/.wake-queue" ]; then
   exit 0
 fi
 
-# 3. Inject agent design pattern header as context
-cat << 'PATTERNS'
+# 3. Make sure backlog.md is fresh (idempotent, ~30ms warm path)
+if [ -x "$FM_ROOT/bin/fm-queue.sh" ]; then
+  "$FM_ROOT/bin/fm-queue.sh" to-markdown >/dev/null 2>&1 || true
+fi
 
-## Agent Design Patterns (active)
+# 4. Write session agenda + init track
+"$FM_ROOT/bin/fm-session-agenda.sh" --write 2>/dev/null || true
+"$FM_ROOT/bin/fm-track.sh" list >/dev/null 2>&1 || true
 
-**Routing:** Ship (PR) vs Scout (report) vs Parallel (batch). Classify before spawning.
-**Contractor:** Goal/Context/Inputs/Artifact/Acceptance/Constraints/Escalation. 7 fields required.
-**Reflection:** Check output vs acceptance criteria. `bin/fm-reflection-check.sh <task-id>`
-**Parallel:** N independent tasks → batch dispatch (`id1=repo1 id2=repo2`).
-**Memory:** Project knowledge → AGENTS.md. Fleet knowledge → data/learn-log.md. Captain prefs → data/captain.md.
+# 5. Print the status report (capped at 8KB for context budget)
+if [ -x "$FM_ROOT/bin/fm-status.sh" ]; then
+  "$FM_ROOT/bin/fm-status.sh" 2>/dev/null | head -c 8000
+fi
 
-**Tool hierarchy (use in order):**
-1. `coco-axi <task>` — first call on unfamiliar tasks (unified DB: 525k transcripts, 31k code, 33k ledgers)
-2. `llm-tldr structure|calls|arch <repo>` — code analysis
-3. `memjuice recall <query>` — session history
-4. `gh-axi` — GitHub operations
-5. `rg` / `fd` / `eza` / `bat` — file ops (not cd+cat+ls)
-6. `gh` — only when gh-axi doesn't cover it
-
-**Enforcement:** `fm-pattern-check.sh` blocks spawn if brief is missing contractor fields.
-Override: `FM_SKIP_PATTERN_CHECK=1 bin/fm-spawn.sh ...`
-PATTERNS
+echo ""
+echo "--- Session track ---"
+"$FM_ROOT/bin/fm-track.sh" current 2>/dev/null || echo "(no active track item)"
 
 exit 0

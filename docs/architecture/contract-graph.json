@@ -1,0 +1,214 @@
+{
+  "schema": 1,
+  "summary": {
+    "total": 24,
+    "scripts": 27,
+    "nodes": 27,
+    "missing": {}
+  },
+  "nodes": [
+    {
+      "id": "fm-bootstrap.sh"
+    },
+    {
+      "id": "fm-brief.sh"
+    },
+    {
+      "id": "fm-ensure-agents-md.sh"
+    },
+    {
+      "id": "fm-fleet-sync.sh"
+    },
+    {
+      "id": "fm-guard.sh"
+    },
+    {
+      "id": "fm-harness.sh"
+    },
+    {
+      "id": "fm-index.sh"
+    },
+    {
+      "id": "fm-inject-context.sh"
+    },
+    {
+      "id": "fm-lang-cache.sh"
+    },
+    {
+      "id": "fm-lock.sh"
+    },
+    {
+      "id": "fm-merge-local.sh"
+    },
+    {
+      "id": "fm-mm-lib.sh"
+    },
+    {
+      "id": "fm-peek.sh"
+    },
+    {
+      "id": "fm-pr-check.sh"
+    },
+    {
+      "id": "fm-project-mode.sh"
+    },
+    {
+      "id": "fm-promote.sh"
+    },
+    {
+      "id": "fm-queue.sh"
+    },
+    {
+      "id": "fm-review-diff.sh"
+    },
+    {
+      "id": "fm-send.sh"
+    },
+    {
+      "id": "fm-session-start.sh"
+    },
+    {
+      "id": "fm-spawn.sh"
+    },
+    {
+      "id": "fm-status.sh"
+    },
+    {
+      "id": "fm-teardown.sh"
+    },
+    {
+      "id": "fm-wake-drain.sh"
+    },
+    {
+      "id": "fm-wake-lib.sh"
+    },
+    {
+      "id": "fm-watch.sh"
+    },
+    {
+      "id": "fm-with-secrets.sh"
+    }
+  ],
+  "edges": [
+    {
+      "from": "fm-guard.sh",
+      "to": "fm-wake-drain.sh",
+      "kind": "subprocess"
+    },
+    {
+      "from": "fm-guard.sh",
+      "to": "fm-wake-lib.sh",
+      "kind": "source"
+    },
+    {
+      "from": "fm-guard.sh",
+      "to": "fm-wake-lib.sh",
+      "kind": "subprocess"
+    },
+    {
+      "from": "fm-guard.sh",
+      "to": "fm-watch.sh",
+      "kind": "subprocess"
+    },
+    {
+      "from": "fm-mm-lib.sh",
+      "to": "fm-bootstrap.sh",
+      "kind": "subprocess"
+    },
+    {
+      "from": "fm-peek.sh",
+      "to": "fm-mm-lib.sh",
+      "kind": "source"
+    },
+    {
+      "from": "fm-peek.sh",
+      "to": "fm-mm-lib.sh",
+      "kind": "subprocess"
+    },
+    {
+      "from": "fm-promote.sh",
+      "to": "fm-send.sh",
+      "kind": "subprocess"
+    },
+    {
+      "from": "fm-send.sh",
+      "to": "fm-mm-lib.sh",
+      "kind": "source"
+    },
+    {
+      "from": "fm-send.sh",
+      "to": "fm-mm-lib.sh",
+      "kind": "subprocess"
+    },
+    {
+      "from": "fm-spawn.sh",
+      "to": "fm-mm-lib.sh",
+      "kind": "source"
+    },
+    {
+      "from": "fm-spawn.sh",
+      "to": "fm-mm-lib.sh",
+      "kind": "subprocess"
+    },
+    {
+      "from": "fm-spawn.sh",
+      "to": "fm-with-secrets.sh",
+      "kind": "subprocess"
+    },
+    {
+      "from": "fm-teardown.sh",
+      "to": "fm-mm-lib.sh",
+      "kind": "source"
+    },
+    {
+      "from": "fm-teardown.sh",
+      "to": "fm-mm-lib.sh",
+      "kind": "subprocess"
+    },
+    {
+      "from": "fm-wake-drain.sh",
+      "to": "fm-wake-lib.sh",
+      "kind": "source"
+    },
+    {
+      "from": "fm-wake-drain.sh",
+      "to": "fm-wake-lib.sh",
+      "kind": "subprocess"
+    },
+    {
+      "from": "fm-watch.sh",
+      "to": "fm-mm-lib.sh",
+      "kind": "source"
+    },
+    {
+      "from": "fm-watch.sh",
+      "to": "fm-mm-lib.sh",
+      "kind": "subprocess"
+    },
+    {
+      "from": "fm-watch.sh",
+      "to": "fm-queue.sh",
+      "kind": "subprocess"
+    },
+    {
+      "from": "fm-watch.sh",
+      "to": "fm-teardown.sh",
+      "kind": "subprocess"
+    },
+    {
+      "from": "fm-watch.sh",
+      "to": "fm-wake-lib.sh",
+      "kind": "source"
+    },
+    {
+      "from": "fm-watch.sh",
+      "to": "fm-wake-lib.sh",
+      "kind": "subprocess"
+    },
+    {
+      "from": "fm-with-secrets.sh",
+      "to": "fm-spawn.sh",
+      "kind": "subprocess"
+    }
+  ]
+}

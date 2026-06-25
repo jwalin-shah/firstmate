@@ -1,150 +1,107 @@
 #!/usr/bin/env bash
-# bin/fm-status.sh — captain-facing live status report.
-# Reads state/<id>.status, state/<id>.meta, fm-tasks queue, and service health.
-# No TUI escape codes. No raw pane bytes. Just the facts.
+# Firstmate status report. Prints a structured, TUI-free summary suitable for
+# paste into chat, capture by the SessionStart hook, or attach to a handoff.
+# Sections: services, in-flight, queue head, recent done, watcher state.
+# Designed to never include raw TUI escape sequences (no capture-pane output)
+# because the captain has been getting paged with mm-ctl capture noise and
+# wants a clean signal at a glance.
 #
 # Usage:
-#   bin/fm-status.sh                # one-line summary
-#   bin/fm-status.sh --full         # full structured report
-#   bin/fm-status.sh --json         # machine-readable
+#   fm-status.sh                  # full report to stdout
 #
-# This is the captain's "what's happening right now" surface.
-# Replaces the prior habit of dumping mm-ctl capture output.
+# Reads from data/tasks.db (via the fm-tasks binary) +
+# state/.last-watcher-beat. Never writes; this is observation only.
+set -eu
 
-set -u
+FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+STATE="${FM_STATE_OVERRIDE:-$FM_ROOT/state}"
 
-FM_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-STATE_DIR="$FM_ROOT/state"
-DATA_DIR="$FM_ROOT/data"
-if [ -n "${TMPDIR:-}" ]; then
-  SOCK="$TMPDIR/mintmux.sock"
-else
-  SOCK="/tmp/mintmux.sock"
+# Resolve tools once. We prefer fm-tasks (single binary, no SQL knowledge
+# needed in the script) and fall back to sqlite3 if it's not on PATH.
+have_fm_tasks=0
+command -v fm-tasks >/dev/null 2>&1 && have_fm_tasks=1
+
+# Backend detection: mm-ctl + socket, or tmux, or nothing.
+watcher_backend=none
+if command -v mm-ctl >/dev/null 2>&1 && [ -S "${TMPDIR:-/tmp}/mintmux.sock" ] \
+   && mm-ctl ping -sock="${TMPDIR:-/tmp}/mintmux.sock" >/dev/null 2>&1; then
+  watcher_backend=mintmux
+elif command -v tmux >/dev/null 2>&1; then
+  watcher_backend=tmux
 fi
 
-# ---- helpers ----
-probe_service() {
-  local name="$1" url="$2"
-  if curl -sf -m 2 -o /dev/null "$url" 2>/dev/null; then
-    echo "  ${name}: alive"
-  elif curl -sf -m 2 -o /dev/null -w "" "$url" 2>/dev/null; then
-    # litellm /health may return 401; treat any TCP-responding as alive
-    echo "  ${name}: alive (auth required on /health)"
+# Count of live crewmate panes (sessions prefixed fm-).
+live_panes=0
+case "$watcher_backend" in
+  mintmux)
+    live_panes=$(mm-ctl list-panes -sock="${TMPDIR:-/tmp}/mintmux.sock" 2>/dev/null \
+                 | awk '{print $NF}' | grep -c '^fm-' || true)
+    ;;
+  tmux)
+    live_panes=$(tmux list-windows -a -F '#{session_name}:#{window_name}' 2>/dev/null \
+                 | grep -c ':fm-' || true)
+    ;;
+esac
+
+# Watcher liveness: how stale is .last-watcher-beat?
+watcher_age=-1
+if [ -e "$STATE/.last-watcher-beat" ]; then
+  if [ "$(uname)" = Darwin ]; then
+    watcher_age=$(( $(date +%s) - $(stat -f %m "$STATE/.last-watcher-beat" 2>/dev/null || echo 0) ))
   else
-    echo "  ${name}: DOWN"
+    watcher_age=$(( $(date +%s) - $(stat -c %Y "$STATE/.last-watcher-beat" 2>/dev/null || echo 0) ))
+  fi
+fi
+if [ "$watcher_age" -ge 0 ] 2>/dev/null; then
+  if [ "$watcher_age" -lt 60 ]; then watcher_state="alive (${watcher_age}s)"
+  elif [ "$watcher_age" -lt 300 ]; then watcher_state="stale (${watcher_age}s)"
+  else watcher_state="dead (${watcher_age}s)"; fi
+else
+  watcher_state="no beat recorded"
+fi
+
+# Section: services alive.
+printf '%s\n' '## Services'
+printf '%s\n' "- watcher backend: $watcher_backend"
+printf '%s\n' "- watcher state:   $watcher_state"
+printf '%s\n' "- live crewmates:  $live_panes"
+
+# fm-tasks ls --fields prints "id,kind,repo,..." per line. The
+# "tasks[N]{...}:" header from the multi-field path is suppressed by the
+# --fields flag, but we still drop it defensively for older versions.
+inflight_section() {
+  local status=$1 limit=$2
+  if [ "$have_fm_tasks" -ne 1 ]; then
+    printf '%s\n' '(fm-tasks not on PATH)'
+    return
+  fi
+  local out
+  out=$(fm-tasks ls --status "$status" --fields id,kind,repo,blocked_by,pr_url 2>/dev/null || true)
+  out=$(printf '%s' "$out" | sed -E -e '/^tasks\[[0-9]+\]\{/d' -e '/^[[:space:]]*$/d')
+  if [ -n "$out" ]; then
+    printf '%s\n' "$out" | head -"$limit"
+  else
+    printf '%s\n' '(none)'
   fi
 }
 
-mintmux_pane_alive() {
-  local pane="$1"
-  [ -n "$pane" ] && [ "$pane" != "null" ]
-}
+printf '%s\n' '## In flight'
+inflight_section inflight 20
+printf '%s\n' ''
 
-# ---- collectors ----
-in_flight_meta() {
-  # read all state/<id>.meta files; for in-flight (kind=ship|scout, has turn-ended <30min)
-  for m in "$STATE_DIR"/*.meta; do
-    [ -f "$m" ] || continue
-    grep -E '^(kind|harness|mode|backend|pane|session|window)=' "$m" 2>/dev/null | tr '\n' ' '
-    echo ""
-  done
-}
+printf '%s\n' '## Queue head (top 10 queued)'
+inflight_section queued 10
+printf '%s\n' ''
 
-last_status_line() {
-  local s="$1"
-  [ -f "$s" ] || { echo "(no status)"; return; }
-  tail -1 "$s"
-}
+printf '%s\n' '## Recent done (last 10)'
+# `done` is a bash reserved word; shellcheck SC1010 fires wherever it
+# appears followed by a newline/`.`. The disable is scoped to the line
+# so the linter still flags anything else in this block.
+# shellcheck disable=SC1010
+inflight_section done 10
+printf '%s\n' ''
 
-# ---- main ----
-MODE="${1:-summary}"
-
-case "$MODE" in
-  --json)
-    # machine-readable: one line per in-flight task with structured fields
-    echo "{ \"in_flight\": ["
-    first=1
-    for m in "$STATE_DIR"/*.meta; do
-      [ -f "$m" ] || continue
-      id=$(basename "$m" .meta)
-      kind=$(grep '^kind=' "$m" | cut -d= -f2)
-      harness=$(grep '^harness=' "$m" | cut -d= -f2)
-      pane=$(grep '^pane=' "$m" | cut -d= -f2)
-      session=$(grep '^session=' "$m" | cut -d= -f2)
-      last=$(last_status_line "$STATE_DIR/$id.status" 2>/dev/null)
-      [ "$first" = 0 ] && echo ","
-      printf '    {"id":"%s","kind":"%s","harness":"%s","pane":"%s","session":"%s","last":"%s"}' \
-        "$id" "$kind" "$harness" "$pane" "$session" "$last"
-      first=0
-    done
-    echo ""
-    echo "  ], \"queue\": \"$(fm-tasks ls 2>/dev/null | head -3 | tr '\n' '|')\" }"
-    ;;
-
-  --full|summary|"")
-    echo "=== firstmate status @ $(date '+%Y-%m-%d %H:%M:%S') ==="
-    echo ""
-    echo "--- Services ---"
-    probe_service ":4002 tokenrouter" "http://127.0.0.1:4002/"
-    probe_service ":8082 mlx"        "http://127.0.0.1:8082/health"
-    if [ -S "$SOCK" ]; then
-      if mm-ctl ping -sock="$SOCK" >/dev/null 2>&1; then
-        echo "  mintmux:     alive"
-      else
-        echo "  mintmux:     socket present but daemon not responding"
-      fi
-    else
-      echo "  mintmux:     DOWN (no socket)"
-    fi
-    echo ""
-    echo "--- In flight ---"
-    count=0
-    for m in "$STATE_DIR"/*.meta; do
-      [ -f "$m" ] || continue
-      id=$(basename "$m" .meta)
-      kind=$(grep '^kind=' "$m" | cut -d= -f2 2>/dev/null)
-      [ -z "$kind" ] && continue
-      # skip torn-down or done tasks (no kind)
-      pane=$(grep '^pane=' "$m" | cut -d= -f2 2>/dev/null)
-      harness=$(grep '^harness=' "$m" | cut -d= -f2 2>/dev/null)
-      mode=$(grep '^mode=' "$m" | cut -d= -f2 2>/dev/null)
-      # liveness check
-      live="?"
-      if mintmux_pane_alive "$pane"; then
-        # liveness check via mm-ctl
-        if mm-ctl list-panes -sock="$SOCK" -session="fm-$id" 2>/dev/null | grep -q "id:$pane"; then
-          live="live"
-        else
-          live="phantom"
-        fi
-      else
-        live="no-pane"
-      fi
-      last=$(last_status_line "$STATE_DIR/$id.status" 2>/dev/null)
-      printf '  %-40s %-6s %-8s %-12s %-8s | %s\n' "$id" "$kind" "$harness" "$mode" "$live" "$last"
-      count=$((count+1))
-    done
-    if [ "$count" = 0 ]; then
-      echo "  (none)"
-    fi
-    echo ""
-    echo "--- Queue (fm-tasks) ---"
-    fm-tasks ls 2>/dev/null | head -8
-    echo ""
-    echo "--- Done recently ---"
-    ls -la "$DATA_DIR"/*/report.md 2>/dev/null | tail -3 | awk '{print "  " $9 " (" $5 " bytes, " $6 " " $7 " " $8 ")"}'
-    echo ""
-    echo "--- Watcher ---"
-    if pgrep -f "fm-watch.sh" >/dev/null 2>&1; then
-      wp=$(pgrep -f "fm-watch.sh" | head -1)
-      echo "  alive (pid $wp)"
-    else
-      echo "  NOT running — arm with: bin/fm-watch.sh &"
-    fi
-    ;;
-
-  *)
-    echo "usage: bin/fm-status.sh [--full|--json]" >&2
-    exit 1
-    ;;
-esac
+# Watcher state one-liner at the end so a downstream parser can grep the
+# final line for liveness without scanning the full report.
+printf '%s\n' '## Watcher'
+printf '%s\n' "backend: $watcher_backend | $watcher_state | live panes: $live_panes"
