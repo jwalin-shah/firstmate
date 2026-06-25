@@ -118,6 +118,15 @@ if [ "$KIND" != scout ] && [ "$MODE" != local-only ]; then
 fi
 echo "teardown $ID complete (window $T, worktree $WT, backend=$BACKEND)"
 
+# Reflection pattern: check crewmate output against acceptance criteria
+if "$FM_ROOT/bin/fm-reflection-check.sh" "$ID" 2>/dev/null; then
+  printf '%s\n' "✅ Reflection: $ID passes acceptance check"
+else
+  REFLECTION_ISSUES=$("$FM_ROOT/bin/fm-reflection-check.sh" "$ID" 2>&1 || true)
+  printf '%s\n' "⚠️ Reflection: $ID has gaps — review recommended"
+  printf '%s\n' "$REFLECTION_ISSUES" | head -5
+fi
+
 # Post-task learn: append a structured entry to data/captain.md and data/learn-log.md
 # Pull the last status line and any report summary as the learning record.
 LEARN_LOG="$FM_ROOT/data/learn-log.md"
