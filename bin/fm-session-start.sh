@@ -58,6 +58,6 @@ PATTERNS
 "$FM_ROOT/bin/fm-session-agenda.sh" --write 2>/dev/null || true
 
 # 5. Initialize session todos from agenda (idempotent)
-"$FM_ROOT/bin/fm-todos.sh" list >/dev/null 2>&1 || true
+"$FM_ROOT/bin/fm-track.sh" list >/dev/null 2>&1 || true
 
 exit 0

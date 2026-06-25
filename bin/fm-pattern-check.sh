@@ -28,9 +28,9 @@ ERRORS=""
 # This makes the session agenda a structural enforcement, not just injection.
 # Override: FM_SKIP_TODO_GATE=1
 if [ "${FM_SKIP_TODO_GATE:-0}" != "1" ]; then
-  if command -v "$FM_ROOT/bin/fm-todos.sh" >/dev/null 2>&1; then
-    if ! TODO_OUTPUT=$("$FM_ROOT/bin/fm-todos.sh" check-gate 2>&1); then
-      ERRORS="$ERRORS  - FAIL: No active session todo. Firstmate must call 'fm-todos start <item>' before spawning.\n"
+  if command -v "$FM_ROOT/bin/fm-track.sh" >/dev/null 2>&1; then
+    if ! TODO_OUTPUT=$("$FM_ROOT/bin/fm-track.sh" check-gate 2>&1); then
+      ERRORS="$ERRORS  - FAIL: No active session todo. Firstmate must call 'fm-track start <item>' before spawning.\n"
       ERRORS="$ERRORS    $TODO_OUTPUT\n"
     fi
   fi
