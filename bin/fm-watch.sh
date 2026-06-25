@@ -172,6 +172,19 @@ while :; do
 $pending
 EOF
     reason="signal:$files"
+    # Backlog refresh: any status write may flip a task from inflight to
+    # done (or vice versa) in the SQLite queue, and data/backlog.md is now
+    # auto-derived from that store. Re-emit it on every signal so the
+    # captain's view stays current without waiting for a manual edit.
+    # The script is idempotent and ~30ms in the cold path; in the warm
+    # path it is a noop against the existing on-disk file. We deliberately
+    # call it BEFORE the auto-teardown block below: a done:/failed: write
+    # must appear in backlog.md before the teardown removes the task from
+    # inflight (otherwise the entry would vanish before the markdown ever
+    # saw it).
+    if [ -x "$SCRIPT_DIR/fm-queue.sh" ]; then
+      "$SCRIPT_DIR/fm-queue.sh" to-markdown >/dev/null 2>&1 || true
+    fi
     # Scout auto-teardown: when a status write lands for a scout task whose
     # last line is done: or failed:, the watcher releases the worktree slot
     # itself instead of waiting for firstmate to call fm-teardown. Ship

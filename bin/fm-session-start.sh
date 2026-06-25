@@ -2,7 +2,8 @@
 # bin/fm-session-start.sh — SessionStart hook for firstmate.
 # Wired from ~/.claude/settings.json hooks.SessionStart.
 # Must complete within 5s timeout. Silent exit 0 on success.
-# Injects agent design pattern reminders as additionalContext.
+# Combines: backlog regeneration, status report, pattern injection,
+# session agenda + track init — all in one shot.
 set -u
 
 FM_ROOT="${CLAUDE_PROJECT_DIR:-}"
@@ -21,43 +22,22 @@ if [ -f "state/.wake-queue" ] && [ -s "state/.wake-queue" ]; then
   exit 0
 fi
 
-# 3. Inject agent design pattern header as context
-cat << 'PATTERNS'
+# 3. Make sure backlog.md is fresh (idempotent, ~30ms warm path)
+if [ -x "$FM_ROOT/bin/fm-queue.sh" ]; then
+  "$FM_ROOT/bin/fm-queue.sh" to-markdown >/dev/null 2>&1 || true
+fi
 
-## Agent Design Patterns (active — must follow)
-
-**Routing EVERY brief.** Every spawn requires `## Routing` with Classification and Tier.
-- Unclear goal → Scout (report, not PR). Clear goal → Ship or Parallel.
-- Single repo, multi-file → Ship. N independent repos → Parallel (batch dispatch).
-- L1=1 file, L2=1 repo, L3=cross-repo, L3+=multi-repo fan-out.
-
-**Decompose L3+ Ship tasks.** Briefs > 30 lines for Ship MUST have `## Decomposition` section.
-- No 92-line monoliths. Break into independent parallel pieces.
-- See data/patterns/routing.md (Step 2) and data/patterns/parallelization.md.
-
-**Contractor:** Goal/Context/Inputs/Artifact/Acceptance/Constraints/Escalation. 7 fields.
-**Reflection:** bin/fm-reflection-check.sh checks output vs acceptance criteria.
-**Memory:** Project knowledge → AGENTS.md. Fleet → data/learn-log.md. Captain → data/captain.md.
-
-**Tool hierarchy (use in order):**
-1. coco-axi — first call on unfamiliar tasks (unified DB)
-2. llm-tldr structure|calls|arch — code analysis
-3. memjuice recall — session history
-4. gh-axi — GitHub operations
-5. rg / fd / eza / bat — file ops (not cd+cat+ls)
-6. gh — only when gh-axi doesn't cover it
-
-**Enforcement:** fm-pattern-check.sh blocks spawn on:
-- Missing Routing classification (new)
-- Brief > 30 lines without Decomposition (new)
-- Missing contractor fields (existing)
-Override: FM_SKIP_PATTERN_CHECK=1 bin/fm-spawn.sh ...
-PATTERNS
-
-# 4. Write session agenda (from backlog + wakes)
+# 4. Write session agenda + init track
 "$FM_ROOT/bin/fm-session-agenda.sh" --write 2>/dev/null || true
-
-# 5. Initialize session todos from agenda (idempotent)
 "$FM_ROOT/bin/fm-track.sh" list >/dev/null 2>&1 || true
+
+# 5. Print the status report (capped at 8KB for context budget)
+if [ -x "$FM_ROOT/bin/fm-status.sh" ]; then
+  "$FM_ROOT/bin/fm-status.sh" 2>/dev/null | head -c 8000
+fi
+
+echo ""
+echo "--- Session track ---"
+"$FM_ROOT/bin/fm-track.sh" current 2>/dev/null || echo "(no active track item)"
 
 exit 0
