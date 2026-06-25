@@ -13,7 +13,19 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 STATE="${FM_STATE_OVERRIDE:-$FM_ROOT/state}"
 GRACE=${FM_GUARD_GRACE:-300}
+SPAWN_GRACE=${FM_SPAWN_GUARD_GRACE:-120}
 queue_pending=false
+
+# --spawn-block turns this into a hard gate (used by fm-spawn.sh): instead of
+# warning and exiting 0, it exits non-zero when the watcher beacon is stale, so a
+# spawn fails fast rather than launching an unsupervised crewmate. Default
+# (no flag) behavior is unchanged - warn only, always exit 0.
+spawn_block=false
+for arg in "$@"; do
+  case "$arg" in
+    --spawn-block) spawn_block=true ;;
+  esac
+done
 
 # shellcheck source=bin/fm-wake-lib.sh
 . "$SCRIPT_DIR/fm-wake-lib.sh"
@@ -23,6 +35,23 @@ if [ "$(uname)" = Darwin ]; then
   stat_mtime() { stat -f %m "$1" 2>/dev/null; }
 else
   stat_mtime() { stat -c %Y "$1" 2>/dev/null; }
+fi
+
+# Spawn gate: a hard, fail-fast check keyed solely on the watcher beacon.
+# Missing beacon -> proceed (first launch, no watcher expected yet). Fresh beacon
+# (<= SPAWN_GRACE) -> proceed. Stale beacon -> exit non-zero so the spawn aborts
+# rather than launching a crewmate no watcher will supervise.
+if "$spawn_block"; then
+  BEAT="$STATE/.last-watcher-beat"
+  [ -e "$BEAT" ] || exit 0
+  m=$(stat_mtime "$BEAT") || exit 0
+  age=$(( $(date +%s) - m ))
+  if [ "$age" -ge "$SPAWN_GRACE" ]; then
+    echo "ERROR: refusing to spawn - no watcher has been alive for ${age}s (>${SPAWN_GRACE}s)." >&2
+    echo "Restart it first (run bin/fm-watch.sh as a background task), or set FM_SKIP_WATCHER_CHECK=1 to bypass." >&2
+    exit 1
+  fi
+  exit 0
 fi
 
 has_meta=false

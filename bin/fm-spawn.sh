@@ -44,9 +44,16 @@ FM_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 if [ "${FM_SECRETS_BACKEND:-}" = infisical ]; then
   exec "$FM_ROOT/bin/fm-with-secrets.sh" "$@"
 fi
-# Skip the watcher guard when re-exec'd for one pair of a batch (FM_SPAWN_NO_GUARD is
-# set by the batch loop below), so the guard runs once for the batch, not once per pair.
-[ -n "${FM_SPAWN_NO_GUARD:-}" ] || "$FM_ROOT/bin/fm-guard.sh" || true
+# Watcher-liveness gate. Every spawn needs the watcher alive to supervise it, so a
+# stale liveness beacon (state/.last-watcher-beat older than FM_SPAWN_GUARD_GRACE,
+# default 120s) hard-blocks the spawn via fm-guard.sh --spawn-block (non-zero exit).
+# A missing beacon (first launch, no watcher yet) and a fresh beacon both pass.
+# Skipped when re-exec'd for one pair of a batch (FM_SPAWN_NO_GUARD set by the batch
+# loop below), so the gate runs once at top level, not once per pair. Bypass entirely
+# with FM_SKIP_WATCHER_CHECK=1.
+if [ -z "${FM_SPAWN_NO_GUARD:-}" ] && [ "${FM_SKIP_WATCHER_CHECK:-0}" != "1" ]; then
+  "$FM_ROOT/bin/fm-guard.sh" --spawn-block || exit 1
+fi
 KIND=ship
 POS=()
 for a in "$@"; do
@@ -238,14 +245,6 @@ else
   if [ -z "$WT" ]; then
     echo "error: treehouse get did not enter a worktree within 60s; inspect window $T" >&2
     exit 1
-||||||| 53e3dce
-# Wait for the treehouse subshell: the pane's cwd moves from the project to the worktree.
-WT=""
-for _ in $(seq 1 60); do
-  p=$(tmux display-message -p -t "$T" '#{pane_current_path}' 2>/dev/null || true)
-  if [ -n "$p" ] && [ "$p" != "$PROJ_ABS" ]; then
-    WT="$p"
-    break
   fi
 fi
 
@@ -371,10 +370,6 @@ case "$BACKEND" in
     tmux send-keys -t "$T" -l "$LAUNCH"
     sleep 0.3
     tmux send-keys -t "$T" Enter
-||||||| 53e3dce
-tmux send-keys -t "$T" -l "$LAUNCH"
-sleep 0.3
-tmux send-keys -t "$T" Enter
 
     # Background: auto-accept trust/permission/import dialogs (tmux fallback).
     # First check at 2s, then 8s for 3 more checks.
@@ -397,20 +392,6 @@ tmux send-keys -t "$T" Enter
     ) &
     ;;
 esac
-||||||| 53e3dce
-# Background: auto-accept trust/permission dialogs (claude/codex/pi; opencode has none).
-# Runs 4 checks over 32s post-launch; silently sends Enter whenever a trust prompt is
-# visible, and exits. If no dialog appears, this is a no-op. Background subshell so
-# it never blocks spawn.
-(
-  for _attempt in 1 2 3 4; do
-    sleep 8
-    _pane=$(tmux capture-pane -t "$T" -p 2>/dev/null || true)
-    if printf '%s' "$_pane" | grep -qi "trust\|Do you trust\|I trust this folder\|trust the contents"; then
-      tmux send-keys -t "$T" "" Enter
-    fi
-  done
-) &
 
 command -v fm-tasks >/dev/null 2>&1 && fm-tasks start "$ID" 2>/dev/null || true
 
