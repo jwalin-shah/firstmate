@@ -205,6 +205,8 @@ if [ "$BACKEND" = mintmux ]; then
     mm_kill_session "$W" >/dev/null 2>&1 || true
     exit 1
   fi
+  sleep 1 # settle treehouse subshell before launch 
+  
 else
   # tmux fallback (preserved verbatim).
   if [ -n "${TMUX:-}" ]; then
