@@ -20,11 +20,30 @@
 #     __PIEXT__    absolute path to state/<task-id>.pi-ext.ts (pi turn-end extension,
 #                  written by this script; outside the worktree to avoid pi's trust gate)
 # Per-harness turn-end hooks are installed automatically; some live outside the worktree.
-# On success prints: spawned <id> harness=<name> kind=<ship|scout> mode=<mode> yolo=<on|off> window=<session:window> worktree=<path>
+# On success prints: spawned <id> harness=<name> kind=<ship|scout> mode=<mode> yolo=<on|off>
+#   window=<session:window> worktree=<path> pane=<id>
 # mode/yolo are resolved per-project from data/projects.md via fm-project-mode.sh.
+#
+# Backend: when mintmux is reachable (mm_* helpers; see fm-mm-lib.sh), each crewmate runs
+# in its own mintmux session named fm-<id> with a single pane. The legacy tmux flow is
+# kept as a fallback (FM_MM_FALLBACK_TMUX=1 forces it). pane= is recorded in the meta
+# alongside window= so downstream scripts can address the right pane whichever backend
+# is live; window= keeps the historical session:window shape for compat.
 set -eu
 
 FM_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=bin/fm-mm-lib.sh
+. "$FM_ROOT/bin/fm-mm-lib.sh"
+
+# Opt-in secrets scoping: when FM_SECRETS_BACKEND=infisical, hand off to
+# bin/fm-with-secrets.sh, which fetches a per-project Infisical scope and
+# re-execs this script under `env -i` with only the fetched key=value pairs
+# plus PATH/HOME/USER/LANG/LC_ALL/TZ/TMUX. Default (unset) keeps the old
+# shell-inheritance behavior - this guard only fires when the captain sets
+# the flag.
+if [ "${FM_SECRETS_BACKEND:-}" = infisical ]; then
+  exec "$FM_ROOT/bin/fm-with-secrets.sh" "$@"
+fi
 # Skip the watcher guard when re-exec'd for one pair of a batch (FM_SPAWN_NO_GUARD is
 # set by the batch loop below), so the guard runs once for the batch, not once per pair.
 [ -n "${FM_SPAWN_NO_GUARD:-}" ] || "$FM_ROOT/bin/fm-guard.sh" || true
@@ -70,7 +89,7 @@ launch_template() {
   # shellcheck disable=SC2016  # single quotes are deliberate: $(cat ...) expands in the crewmate pane, not here
   case "$1" in
     claude) printf '%s' 'claude --dangerously-skip-permissions "$(cat __BRIEF__)"' ;;
-    pioneer) printf '%s' 'cpion "$(cat __BRIEF__)"' ;;
+    cpion) printf '%s' 'claude-launch run pioneer --dangerously-skip-permissions --model claude-opus-4-8 "$(cat __BRIEF__)"' ;;
     cb) printf '%s' 'cb "$(cat __BRIEF__)"' ;;
     ctoken) printf '%s' 'ctoken "$(cat __BRIEF__)"' ;;
     cursor-agent) printf '%s' 'cursor-agent "$(cat __BRIEF__)"' ;;
@@ -100,6 +119,20 @@ case "$ARG3" in
 esac
 
 BRIEF="$FM_ROOT/data/$ID/brief.md"
+
+# Pattern enforcement: validate brief against contractor/rifle pattern
+# Blocking by default. Pass FM_SKIP_PATTERN_CHECK=1 env to bypass (emergency override).
+if [ "${FM_SKIP_PATTERN_CHECK:-0}" != "1" ]; then
+  PATTERN_FLAG=""
+  [ "$KIND" = "scout" ] && PATTERN_FLAG="--scout"
+  if ! "$FM_ROOT/bin/fm-pattern-check.sh" "$ID" $PATTERN_FLAG 2>/dev/null; then
+    PATTERN_ISSUES=$("$FM_ROOT/bin/fm-pattern-check.sh" "$ID" $PATTERN_FLAG 2>&1 || true)
+    echo "" >&2
+    echo "PATTERN ENFORCEMENT BLOCKED SPAWN: $ID" >&2
+    echo "Fix the brief's contractor fields, or rerun with FM_SKIP_PATTERN_CHECK=1 to bypass." >&2
+    exit 1
+  fi
+fi
 [ -f "$BRIEF" ] || { echo "error: no brief at $BRIEF" >&2; exit 1; }
 
 # Pre-spawn pattern enforcement: validate the brief's contractor fields.
@@ -108,24 +141,109 @@ BRIEF="$FM_ROOT/data/$ID/brief.md"
 
 PROJ_ABS="$(cd "$PROJ" && pwd)"
 
-# Same session when firstmate already runs inside tmux; dedicated session otherwise.
-if [ -n "${TMUX:-}" ]; then
-  SES=$(tmux display-message -p '#S')
+# Decide backend once and use it everywhere below. mm_ensure_daemon starts the
+# mintmux server if the socket is missing; if mintmux is genuinely unavailable,
+# fall back to tmux. The legacy tmux path is preserved verbatim for that branch.
+BACKEND=$(mm_ensure_daemon) || exit 1
+# PANE_ID is only assigned on the mintmux path below; default it so the final
+# summary echo and meta writer don't trip `set -u` on the tmux backend.
+PANE_ID=""
+
+if [ "$BACKEND" = mintmux ]; then
+  W="fm-$ID"
+  SES="$W"  # mintmux has one window per session; we use session-name == window-name for compat
+  # Refuse a duplicate session up front; mm-ctl would otherwise return EACCES.
+  if mm_list_panes "$W" | grep -q "^.\\+$W\$"; then
+    echo "error: session $W already exists in mintmux" >&2
+    exit 1
+  fi
+  # Seed command: cd into the project then exec the user's login shell so the
+  # pane starts as an interactive shell in PROJ_ABS. The user's $SHELL is what
+  # the harness / treehouse / git hooks expect for PS1 and signal handling.
+  SEED_SHELL=${SHELL:-/bin/sh}
+  SEED_CMD="cd '$PROJ_ABS' && exec '$SEED_SHELL'"
+  PANE_ID=$(mm_new_session "$W" "$SEED_CMD" "$PROJ_ABS") || {
+    echo "error: mintmux refused to create session $W" >&2
+    exit 1
+  }
+  T="$SES:$W"  # legacy session:window shape, kept for downstream compat (fm-peek, fm-send)
+
+  # Enter the treehouse worktree inside the freshly spawned shell. mm-send
+  # appends a newline by default; that submits the command.
+  mm_send_blocking "$PANE_ID" "treehouse get" >/dev/null || {
+    echo "error: mintmux send to pane $PANE_ID failed" >&2
+    mm_kill_session "$W" >/dev/null 2>&1 || true
+    exit 1
+  }
+
+  # treehouse get opens an interactive subshell (it does NOT exit on its own;
+  # the agent harness that follows must `cd $WT && exec zsh` to take over).
+  # Inside that subshell, send a `pwd` so the worktree's absolute path lands
+  # on a line of its own - the prompt's cwd prefix is not parseable, so we
+  # force a real pwd. The path is the only one on a /-rooted line in the
+  # captured pane (the seed shell's PROJ_ABS is filtered out below).
+  sleep 0.5
+  mm_send_blocking "$PANE_ID" "pwd" >/dev/null || true
+
+  # Wait for the worktree: treehouse get prints the worktree path on success.
+  # The seed shell starts in PROJ_ABS; after treehouse get it cd's into the
+  # worktree, so the shell prompt's CWD shifts. We capture the pane and look
+  # for a fresh path that is not PROJ_ABS (treehouse worktrees live under
+  # ~/.treehouse/<repo>/<slot>, never under PROJ_ABS).
+  WT=""
+  for _ in $(seq 1 60); do
+    cap=$(mm_capture_pane "$PANE_ID" 4096 2>/dev/null || true)
+    # Strip ANSI / CR and look for a /-rooted absolute path that isn't PROJ_ABS.
+    # We sent `pwd` inside the treehouse subshell, so the worktree path lands
+    # on a /-rooted line on its own. The seed shell's PROJ_ABS is filtered out
+    # so we never mistake the project root for a worktree.
+    cand=$(printf '%s' "$cap" | tr -d '\r' | sed -E 's/\x1b\[[0-9;]*[A-Za-z]//g' \
+      | grep -E '^/[^ ]+$' | grep -v "^$PROJ_ABS\$" | tail -1 || true)
+    if [ -n "$cand" ] && [ -d "$cand" ]; then
+      WT="$cand"
+      break
+    fi
+    sleep 1
+  done
+  if [ -z "$WT" ]; then
+    echo "error: treehouse get did not enter a worktree within 60s; inspect session $W pane $PANE_ID" >&2
+    mm_kill_session "$W" >/dev/null 2>&1 || true
+    exit 1
+  fi
+  
 else
-  tmux has-session -t firstmate 2>/dev/null || tmux new-session -d -s firstmate
-  SES=firstmate
-fi
+  # tmux fallback (preserved verbatim).
+  if [ -n "${TMUX:-}" ]; then
+    SES=$(tmux display-message -p '#S')
+  else
+    tmux has-session -t firstmate 2>/dev/null || tmux new-session -d -s firstmate
+    SES=firstmate
+  fi
 
-W="fm-$ID"
-T="$SES:$W"
-if tmux list-windows -t "$SES" -F '#{window_name}' | grep -qx "$W"; then
-  echo "error: window $T already exists" >&2
-  exit 1
-fi
+  W="fm-$ID"
+  T="$SES:$W"
+  if tmux list-windows -t "$SES" -F '#{window_name}' | grep -qx "$W"; then
+    echo "error: window $T already exists" >&2
+    exit 1
+  fi
 
-tmux new-window -d -t "$SES" -n "$W" -c "$PROJ_ABS"
-tmux send-keys -t "$T" 'treehouse get' Enter
+  tmux new-window -d -t "$SES" -n "$W" -c "$PROJ_ABS"
+  tmux send-keys -t "$T" 'treehouse get' Enter
 
+  # Wait for the treehouse subshell: the pane's cwd moves from the project to the worktree.
+  WT=""
+  for _ in $(seq 1 60); do
+    p=$(tmux display-message -p -t "$T" '#{pane_current_path}' 2>/dev/null || true)
+    if [ -n "$p" ] && [ "$p" != "$PROJ_ABS" ]; then
+      WT="$p"
+      break
+    fi
+    sleep 1
+  done
+  if [ -z "$WT" ]; then
+    echo "error: treehouse get did not enter a worktree within 60s; inspect window $T" >&2
+    exit 1
+||||||| 53e3dce
 # Wait for the treehouse subshell: the pane's cwd moves from the project to the worktree.
 WT=""
 for _ in $(seq 1 60); do
@@ -134,11 +252,6 @@ for _ in $(seq 1 60); do
     WT="$p"
     break
   fi
-  sleep 1
-done
-if [ -z "$WT" ]; then
-  echo "error: treehouse get did not enter a worktree within 60s; inspect window $T" >&2
-  exit 1
 fi
 
 # Per-harness turn-end hook: a file that touches state/<id>.turn-ended when the
@@ -153,7 +266,7 @@ exclude_path() {
   grep -qxF "$rel" "$EXCL" 2>/dev/null || echo "$rel" >> "$EXCL"
 }
 case "$HARNESS" in
-  claude*|pioneer|cb|ctoken)
+  claude*|cpion|cb|ctoken)
     mkdir -p "$WT/.claude"
     cat > "$WT/.claude/settings.local.json" <<EOF
 {"hooks":{"Stop":[{"hooks":[{"type":"command","command":"touch '$TURNEND'"}]}]}}
@@ -215,15 +328,81 @@ mkdir -p "$FM_ROOT/state"
   echo "kind=$KIND"
   echo "mode=$MODE"
   echo "yolo=$YOLO"
+  echo "backend=$BACKEND"
+  [ "$BACKEND" = mintmux ] && echo "pane=$PANE_ID" && echo "session=$W"
 } > "$FM_ROOT/state/$ID.meta"
+
+# Status routing is self-contained: crewmates embed their task id in every
+# status line (format: "state:task-id: note"). The bridge parses it directly
+# from pane output. No external pane→task mapping needed.
 
 LAUNCH=${LAUNCH//__BRIEF__/$BRIEF}
 LAUNCH=${LAUNCH//__TURNEND__/$TURNEND}
 LAUNCH=${LAUNCH//__PIEXT__/$FM_ROOT/state/$ID.pi-ext.ts}
+case "$BACKEND" in
+  mintmux)
+    # mm-send appends a newline by default; that submits the launch command.
+    # Slash commands open a completion popup in some TUIs (verified on codex);
+    # submitting too fast selects nothing, so the same 1.2s grace tmux used.
+    mm_send_blocking "$PANE_ID" "$LAUNCH" >/dev/null || {
+      echo "error: mintmux send launch to pane $PANE_ID failed" >&2
+      mm_kill_session "$W" >/dev/null 2>&1 || true
+      exit 1
+    }
+    case "$LAUNCH" in /*) sleep 1.2 ;; *) sleep 0.3 ;; esac
+    mm_send_blocking "$PANE_ID" "" >/dev/null || true  # literal Enter (empty line)
+    # Background: auto-accept trust/permission/import dialogs. First check at 2s, then
+    # 8s intervals for 3 more checks. Handles folder trust, external imports, permissions.
+    (
+      sleep 2
+      _pane=$(mm_capture_pane "$PANE_ID" 4096 2>/dev/null || true)
+      if printf '%s' "$_pane" | grep -qiE "trust|external.import|Allow.*imports|this folder|permission"; then
+        mm_send_blocking "$PANE_ID" "1" >/dev/null || true
+        sleep 1
+        mm_send_blocking "$PANE_ID" "" >/dev/null || true
+      fi
+      for _attempt in 1 2 3; do
+        sleep 8
+        _pane=$(mm_capture_pane "$PANE_ID" 4096 2>/dev/null || true)
+        if printf '%s' "$_pane" | grep -qiE "trust|external.import|Allow.*imports|this folder|permission"; then
+          mm_send_blocking "$PANE_ID" "1" >/dev/null || true
+          sleep 1
+          mm_send_blocking "$PANE_ID" "" >/dev/null || true
+        fi
+      done
+    ) &
+    ;;
+  *)
+    tmux send-keys -t "$T" -l "$LAUNCH"
+    sleep 0.3
+    tmux send-keys -t "$T" Enter
+||||||| 53e3dce
 tmux send-keys -t "$T" -l "$LAUNCH"
 sleep 0.3
 tmux send-keys -t "$T" Enter
 
+    # Background: auto-accept trust/permission/import dialogs (tmux fallback).
+    # First check at 2s, then 8s for 3 more checks.
+    (
+      _pane=$(tmux capture-pane -t "$T" -p 2>/dev/null || true)
+      if printf '%s' "$_pane" | grep -qiE "trust|external.import|Allow.*imports|this folder|permission"; then
+        tmux send-keys -t "$T" "1" Enter
+        sleep 1
+        tmux send-keys -t "$T" "" Enter
+      fi
+      for _attempt in 1 2 3; do
+        sleep 8
+        _pane=$(tmux capture-pane -t "$T" -p 2>/dev/null || true)
+        if printf '%s' "$_pane" | grep -qiE "trust|external.import|Allow.*imports|this folder|permission"; then
+          tmux send-keys -t "$T" "1" Enter
+          sleep 1
+          tmux send-keys -t "$T" "" Enter
+        fi
+      done
+    ) &
+    ;;
+esac
+||||||| 53e3dce
 # Background: auto-accept trust/permission dialogs (claude/codex/pi; opencode has none).
 # Runs 4 checks over 32s post-launch; silently sends Enter whenever a trust prompt is
 # visible, and exits. If no dialog appears, this is a no-op. Background subshell so
@@ -238,4 +417,6 @@ tmux send-keys -t "$T" Enter
   done
 ) &
 
-echo "spawned $ID harness=$HARNESS kind=$KIND mode=$MODE yolo=$YOLO window=$T worktree=$WT"
+command -v fm-tasks >/dev/null 2>&1 && fm-tasks start "$ID" 2>/dev/null || true
+
+echo "spawned $ID harness=$HARNESS kind=$KIND mode=$MODE yolo=$YOLO window=$T worktree=$WT backend=$BACKEND pane=$PANE_ID"
