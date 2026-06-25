@@ -97,6 +97,13 @@ age_of() {  # seconds since file mtime; "due immediately" if missing
 
 [ -e "$STATE/.last-heartbeat" ] || touch "$STATE/.last-heartbeat"
 
+# Prune stale wake entries (older than FM_WAKE_TTL) accumulated across sessions
+# before entering the main loop, so the queue never grows unbounded.
+pruned_wakes=$(fm_wake_prune_ttl)
+if [ "${pruned_wakes:-0}" -gt 0 ]; then
+  echo "pruned $pruned_wakes stale wake entries" >&2
+fi
+
 # Layer 2 + 3 signal scan: status files and turn-end markers. Each file is
 # compared against a persisted size:mtime signature (.seen-*) rather than
 # mtime-vs-a-startup-touch, so signals that land while no watcher is running

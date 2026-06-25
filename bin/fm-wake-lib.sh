@@ -8,6 +8,7 @@ STATE="${FM_STATE_OVERRIDE:-${STATE:-$FM_ROOT/state}}"
 FM_WAKE_QUEUE="${FM_WAKE_QUEUE:-$STATE/.wake-queue}"
 FM_WAKE_QUEUE_LOCK="${FM_WAKE_QUEUE_LOCK:-$STATE/.wake-queue.lock}"
 FM_LOCK_STALE_AFTER="${FM_LOCK_STALE_AFTER:-2}"
+FM_WAKE_TTL="${FM_WAKE_TTL:-3600}"
 mkdir -p "$STATE"
 
 fm_current_pid() {
@@ -114,6 +115,38 @@ fm_wake_clean_field() {
   LC_ALL=C tr '\t\r\n' '   '
 }
 
+# Drop wake entries whose epoch (field 1) is older than FM_WAKE_TTL seconds.
+# Assumes the caller already holds FM_WAKE_QUEUE_LOCK. Lines whose first field is
+# non-numeric are kept untouched. Prints the count of dropped entries to stdout.
+_fm_wake_prune_locked() {
+  local now cutoff tmp pruned
+  [ -e "$FM_WAKE_QUEUE" ] || { printf '0\n'; return 0; }
+  now=$(date +%s)
+  cutoff=$((now - FM_WAKE_TTL))
+  tmp="$FM_WAKE_QUEUE.prune.$(fm_current_pid)"
+  pruned=$(awk -F '\t' -v cutoff="$cutoff" -v out="$tmp" '
+    $1 ~ /^[0-9]+$/ && $1 < cutoff { dropped++; next }
+    { print $0 > out }
+    END { print dropped + 0 }
+  ' "$FM_WAKE_QUEUE")
+  if [ -f "$tmp" ]; then
+    mv "$tmp" "$FM_WAKE_QUEUE"
+  elif [ "${pruned:-0}" -gt 0 ]; then
+    # Every line was dropped, so awk never created the output file; truncate.
+    : > "$FM_WAKE_QUEUE"
+  fi
+  printf '%s\n' "${pruned:-0}"
+}
+
+# Public TTL prune: acquires the queue lock, prunes, prints the dropped count.
+fm_wake_prune_ttl() {
+  local pruned
+  fm_lock_acquire_wait "$FM_WAKE_QUEUE_LOCK"
+  pruned=$(_fm_wake_prune_locked)
+  fm_lock_release "$FM_WAKE_QUEUE_LOCK"
+  printf '%s\n' "$pruned"
+}
+
 fm_wake_append() {
   local kind=$1 key=$2 payload=$3 clean_key clean_payload epoch seq seq_file status
   case "$kind" in
@@ -128,6 +161,7 @@ fm_wake_append() {
   status=0
 
   fm_lock_acquire_wait "$FM_WAKE_QUEUE_LOCK"
+  _fm_wake_prune_locked >/dev/null
   seq=$(cat "$seq_file" 2>/dev/null || echo 0)
   case "$seq" in
     ''|*[!0-9]*) seq=0 ;;
