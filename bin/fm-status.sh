@@ -16,7 +16,11 @@ set -u
 FM_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 STATE_DIR="$FM_ROOT/state"
 DATA_DIR="$FM_ROOT/data"
-SOCK="/var/folders/8s/f4b_dnwd55x_0jn7sjlktk7c0000gp/T/mintmux.sock"
+if [ -n "${TMPDIR:-}" ]; then
+  SOCK="$TMPDIR/mintmux.sock"
+else
+  SOCK="/tmp/mintmux.sock"
+fi
 
 # ---- helpers ----
 probe_service() {
