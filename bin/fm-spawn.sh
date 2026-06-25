@@ -238,14 +238,6 @@ else
   if [ -z "$WT" ]; then
     echo "error: treehouse get did not enter a worktree within 60s; inspect window $T" >&2
     exit 1
-||||||| 53e3dce
-# Wait for the treehouse subshell: the pane's cwd moves from the project to the worktree.
-WT=""
-for _ in $(seq 1 60); do
-  p=$(tmux display-message -p -t "$T" '#{pane_current_path}' 2>/dev/null || true)
-  if [ -n "$p" ] && [ "$p" != "$PROJ_ABS" ]; then
-    WT="$p"
-    break
   fi
 fi
 
@@ -371,47 +363,22 @@ case "$BACKEND" in
     tmux send-keys -t "$T" -l "$LAUNCH"
     sleep 0.3
     tmux send-keys -t "$T" Enter
-||||||| 53e3dce
-tmux send-keys -t "$T" -l "$LAUNCH"
-sleep 0.3
-tmux send-keys -t "$T" Enter
 
-    # Background: auto-accept trust/permission/import dialogs (tmux fallback).
-    # First check at 2s, then 8s for 3 more checks.
+    # Background: auto-accept trust/permission dialogs (claude/codex/pi; opencode has none).
+    # Runs 4 checks over 32s post-launch; silently sends Enter whenever a trust prompt is
+    # visible, and exits. If no dialog appears, this is a no-op. Background subshell so
+    # it never blocks spawn.
     (
-      _pane=$(tmux capture-pane -t "$T" -p 2>/dev/null || true)
-      if printf '%s' "$_pane" | grep -qiE "trust|external.import|Allow.*imports|this folder|permission"; then
-        tmux send-keys -t "$T" "1" Enter
-        sleep 1
-        tmux send-keys -t "$T" "" Enter
-      fi
-      for _attempt in 1 2 3; do
+      for _attempt in 1 2 3 4; do
         sleep 8
         _pane=$(tmux capture-pane -t "$T" -p 2>/dev/null || true)
-        if printf '%s' "$_pane" | grep -qiE "trust|external.import|Allow.*imports|this folder|permission"; then
-          tmux send-keys -t "$T" "1" Enter
-          sleep 1
+        if printf '%s' "$_pane" | grep -qi "trust\|Do you trust\|I trust this folder\|trust the contents"; then
           tmux send-keys -t "$T" "" Enter
         fi
       done
     ) &
     ;;
 esac
-||||||| 53e3dce
-# Background: auto-accept trust/permission dialogs (claude/codex/pi; opencode has none).
-# Runs 4 checks over 32s post-launch; silently sends Enter whenever a trust prompt is
-# visible, and exits. If no dialog appears, this is a no-op. Background subshell so
-# it never blocks spawn.
-(
-  for _attempt in 1 2 3 4; do
-    sleep 8
-    _pane=$(tmux capture-pane -t "$T" -p 2>/dev/null || true)
-    if printf '%s' "$_pane" | grep -qi "trust\|Do you trust\|I trust this folder\|trust the contents"; then
-      tmux send-keys -t "$T" "" Enter
-    fi
-  done
-) &
-
 command -v fm-tasks >/dev/null 2>&1 && fm-tasks start "$ID" 2>/dev/null || true
 
 echo "spawned $ID harness=$HARNESS kind=$KIND mode=$MODE yolo=$YOLO window=$T worktree=$WT backend=$BACKEND pane=$PANE_ID"
