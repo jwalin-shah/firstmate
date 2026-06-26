@@ -10,18 +10,16 @@
 # Usage: fm-teardown.sh <task-id> [--force]
 #   --force skips the unpushed-work check. Only use it when the captain has
 #   explicitly said to discard the work.
-set -eu
-
-FM_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+set -euo pipefail
+[ -n "${FM_ROOT:-}" ] || FM_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+. "$FM_ROOT/bin/fm-init.sh"
 "$FM_ROOT/bin/fm-guard.sh" || true
-# shellcheck source=bin/fm-mm-lib.sh
-. "$FM_ROOT/bin/fm-mm-lib.sh"
 STATE="$FM_ROOT/state"
 ID=$1
 FORCE=${2:-}
 
 META="$STATE/$ID.meta"
-[ -f "$META" ] || { echo "error: no meta for task $ID at $META" >&2; exit 1; }
+[ -f "$META" ] || die "$ID: meta not found"
 WT=$(grep '^worktree=' "$META" | cut -d= -f2-)
 T=$(grep '^window=' "$META" | cut -d= -f2-)
 PROJ=$(grep '^project=' "$META" | cut -d= -f2-)

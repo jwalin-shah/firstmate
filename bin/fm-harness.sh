@@ -8,9 +8,9 @@
 # cursor-agent has no env marker and uses a binary outside the verified set;
 # it is selected by captain override (config/crew-harness) only and never
 # auto-detected. If you verify a marker for it, add it here.
-set -u
-
-FM_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+set -euo pipefail
+[ -n "${FM_ROOT:-}" ] || FM_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+. "$FM_ROOT/bin/fm-init.sh"
 
 detect_own() {
   # Layer 1: environment markers for verified harnesses.

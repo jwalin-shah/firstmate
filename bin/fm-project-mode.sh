@@ -19,9 +19,9 @@
 # An unknown/missing project or unknown mode falls back to "no-mistakes off" and warns
 # to stderr, so a typo never silently drops the gate.
 # Usage: fm-project-mode.sh <project-name>
-set -eu
-
-FM_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+set -euo pipefail
+[ -n "${FM_ROOT:-}" ] || FM_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+. "$FM_ROOT/bin/fm-init.sh"
 REG="$FM_ROOT/data/projects.md"
 NAME=${1:?usage: fm-project-mode.sh <project-name>}
 

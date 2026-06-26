@@ -10,7 +10,7 @@
 #   bin/fm-transcripts.sh show <id>       # show first 50 lines of a session
 #   bin/fm-transcripts.sh stats           # per-tool counts for a recent session
 
-set -u
+set -euo pipefail
 
 # Per-account claude dirs: claude (main), claude-a, claude-b, claude-nvidia, claude-pioneer, claude-token
 # All write their project transcripts to ~/.claude-<account>/projects/

@@ -23,14 +23,9 @@
 #
 # The block is fenced under "## Project Context (auto-injected)" so the
 # crewmate can tell scaffold content from filtered task context.
-set -eu
-
-REPO_NAME="${1:-}"
-PROJECT_DIR="${2:-}"
-TASK_DESC="${3:-}"
-
-CACHE_DIR="${FM_LANG_CACHE_DIR:-$HOME/.agent-rules/lang-cache}"
-FM_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+set -euo pipefail
+[ -n "${FM_ROOT:-}" ] || FM_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+. "$FM_ROOT/bin/fm-init.sh"
 
 # --- 1. Find the project's AGENTS.md ---
 find_agents_md() {

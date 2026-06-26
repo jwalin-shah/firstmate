@@ -7,16 +7,11 @@
 # every harness has. Normal wake handling (watcher briefly down between a wake
 # and its restart) stays inside the grace window and stays silent.
 # Always exits 0: the guard warns, it never blocks.
-set -u
-
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
-STATE="${FM_STATE_OVERRIDE:-$FM_ROOT/state}"
+set -euo pipefail
+[ -n "${FM_ROOT:-}" ] || FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+. "$FM_ROOT/bin/fm-init.sh"
 GRACE=${FM_GUARD_GRACE:-300}
 queue_pending=false
-
-# shellcheck source=bin/fm-wake-lib.sh
-. "$SCRIPT_DIR/fm-wake-lib.sh"
 
 # Portable mtime; see fm-watch.sh for why the `stat -f || stat -c` fallback breaks on Linux.
 if [ "$(uname)" = Darwin ]; then

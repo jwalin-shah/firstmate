@@ -29,14 +29,13 @@
 #   fm-queue.sh to-markdown | --once            # derive data/backlog.md from SQLite+queue.json
 #   fm-queue.sh --mark-done <id>                # self-heal: mark fm-tasks done when meta says
 #                                              # the pane is gone and last status is done:/failed:
-set -eu
-
-FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
-STATE="${FM_STATE_OVERRIDE:-$FM_ROOT/state}"
+set -euo pipefail
+[ -n "${FM_ROOT:-}" ] || FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+. "$FM_ROOT/bin/fm-init.sh"
 DATA="${FM_DATA_OVERRIDE:-$FM_ROOT/data}"
 QUEUE="$STATE/queue.json"
 BACKLOG="$DATA/backlog.md"
-mkdir -p "$STATE" "$DATA"
+mkdir -p "$DATA"
 
 # Where fm-tasks stores its DB. The binary is the same canonical queue
 # (data/tasks.db per the orbit/cmd/fm-tasks schema); we read from it but never

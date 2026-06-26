@@ -1,10 +1,8 @@
 #!/usr/bin/env bash
 # Atomically drain durable watcher wake records.
-set -u
-
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=bin/fm-wake-lib.sh
-. "$SCRIPT_DIR/fm-wake-lib.sh"
+set -euo pipefail
+[ -n "${FM_ROOT:-}" ] || FM_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+. "$FM_ROOT/bin/fm-init.sh"
 
 DRAIN_TMP=
 DRAIN_LOCK_HELD=false

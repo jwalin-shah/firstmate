@@ -4,9 +4,9 @@
 # the PR is merged (the watcher's check contract: output = wake firstmate,
 # silence = keep sleeping).
 # Usage: fm-pr-check.sh <task-id> <pr-url>
-set -eu
-
-FM_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+set -euo pipefail
+[ -n "${FM_ROOT:-}" ] || FM_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+. "$FM_ROOT/bin/fm-init.sh"
 "$FM_ROOT/bin/fm-guard.sh" || true
 ID=$1
 URL=$2

@@ -5,12 +5,10 @@
 #   a mintmux pane id via mm_get_pane_for_session when the mintmux backend is
 #   live; tmux fallback uses send-keys as before.
 # Special keys instead of text: fm-send.sh <window> --key Escape   (or Enter, C-c, ...)
-set -eu
-
-"$(dirname "${BASH_SOURCE[0]}")/fm-guard.sh" || true
-FM_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-# shellcheck source=bin/fm-mm-lib.sh
-. "$FM_ROOT/bin/fm-mm-lib.sh"
+set -euo pipefail
+[ -n "${FM_ROOT:-}" ] || FM_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+. "$FM_ROOT/bin/fm-init.sh"
+"$FM_ROOT/bin/fm-guard.sh" || true
 
 # resolve name: on mintmux, "<window>" or "<session>:<window>" -> pane id;
 # on tmux, return session:window (legacy) unchanged.

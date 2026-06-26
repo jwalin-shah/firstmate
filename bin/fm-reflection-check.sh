@@ -6,9 +6,9 @@
 #
 # Usage: bin/fm-reflection-check.sh <task-id>
 # Exit 0 = passes (or brief not found), 1 = gaps found.
-set -eu
-
-FM_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+set -euo pipefail
+[ -n "${FM_ROOT:-}" ] || FM_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+. "$FM_ROOT/bin/fm-init.sh"
 ID="${1:-}"
 [ -n "$ID" ] || { echo "usage: fm-reflection-check.sh <task-id>"; exit 1; }
 

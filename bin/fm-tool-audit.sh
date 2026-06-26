@@ -6,7 +6,7 @@
 #   bin/fm-tool-audit.sh --last 24h          # aggregate last 24h of sessions
 #   bin/fm-tool-audit.sh --all claude         # all claude sessions, last 7 days
 
-set -u
+set -euo pipefail
 
 CLAUDE_PROJECTS="$HOME/.claude/projects"
 

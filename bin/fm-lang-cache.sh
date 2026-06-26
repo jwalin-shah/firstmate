@@ -14,10 +14,9 @@
 #   0  success (file existed or was populated)
 #   1  invalid arg or githits-axi failed
 #   2  cache file absent and network call refused (offline mode)
-set -eu
-
-# shellcheck disable=SC2034  # FM_ROOT reserved for future flag overrides.
-FM_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+set -euo pipefail
+[ -n "${FM_ROOT:-}" ] || FM_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+. "$FM_ROOT/bin/fm-init.sh"
 CACHE_DIR="${FM_LANG_CACHE_DIR:-$HOME/.agent-rules/lang-cache}"
 mkdir -p "$CACHE_DIR"
 

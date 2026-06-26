@@ -9,9 +9,9 @@
 #          Set FM_FLEET_PRUNE=0 to skip branch pruning during that refresh.
 #        fm-bootstrap.sh install <tool>...
 #          Install the named tools (only ones the captain approved).
-set -u
-
-FM_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+set -euo pipefail
+[ -n "${FM_ROOT:-}" ] || FM_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+. "$FM_ROOT/bin/fm-init.sh"
 
 fleet_sync() {
   [ -x "$FM_ROOT/bin/fm-fleet-sync.sh" ] || return 0
@@ -66,9 +66,9 @@ TOOLS="tmux node gh treehouse no-mistakes gh-axi chrome-devtools-axi lavish-axi 
 
 if [ "${1:-}" = "install" ]; then
   shift
-  [ $# -gt 0 ] || { echo "usage: fm-bootstrap.sh install <tool>..." >&2; exit 1; }
+  [ $# -gt 0 ] || usage "install <tool>..."
   for t in "$@"; do
-    cmd=$(install_cmd "$t") || { echo "error: unknown tool $t" >&2; exit 1; }
+    cmd=$(install_cmd "$t") || die "unknown tool: $t"
     cmd=${cmd%%  #*}
     echo "installing $t: $cmd"
     eval "$cmd"

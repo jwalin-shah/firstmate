@@ -3,9 +3,9 @@
 # before fm-spawn.sh launches the crewmate.
 # Usage: fm-pattern-check.sh <task-id> [--scout]
 # Exits 0 if brief passes all checks, prints warnings and exits 1 otherwise.
-set -eu
-
-FM_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+set -euo pipefail
+[ -n "${FM_ROOT:-}" ] || FM_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+. "$FM_ROOT/bin/fm-init.sh"
 ID="${1:-}"
 [ -n "$ID" ] || { echo "usage: fm-pattern-check.sh <task-id> [--scout]"; exit 1; }
 

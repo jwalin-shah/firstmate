@@ -23,9 +23,9 @@
 #
 # This script is invoked by bin/fm-spawn.sh when FM_SECRETS_BACKEND=infisical
 # is set; the flag is opt-in so default spawn behavior is unchanged.
-set -eu
-
-FM_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+set -euo pipefail
+[ -n "${FM_ROOT:-}" ] || FM_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+. "$FM_ROOT/bin/fm-init.sh"
 PROJ=${1:?fm-with-secrets.sh: missing project slug (arg 1)}
 TASK=${2:?fm-with-secrets.sh: missing task id (arg 2)}
 PROJDIR=${3:?fm-with-secrets.sh: missing project dir (arg 3)}
@@ -52,8 +52,7 @@ esac
 # defeat the whole point of scoped keys).
 MACHINE_ENV="$HOME/.infisical_machine.env"
 if [ ! -f "$MACHINE_ENV" ]; then
-  echo "error: $MACHINE_ENV not found; infisical machine identity required for scoped secrets" >&2
-  echo "       run 'infisical login' interactively once, then save creds to $MACHINE_ENV" >&2
+  echo "error: $MACHINE_ENV not found — run 'infisical login' first, save creds to $MACHINE_ENV" >&2
   exit 2
 fi
 # shellcheck source=/dev/null
@@ -72,9 +71,7 @@ done
 # here means /llm is misconfigured in Infisical - surface that loud rather
 # than launching an agent that immediately fails on a 401.
 if ! grep -q '^ANTHROPIC_API_KEY=' "$TMPENV" 2>/dev/null; then
-  echo "error: no ANTHROPIC_API_KEY in /llm for project '$PROJ'; check Infisical" >&2
-  echo "       fetched paths: ${PATHS[*]}" >&2
-  exit 2
+  die "$PROJ: ANTHROPIC_API_KEY not in Infisical /llm scope (paths: ${PATHS[*]})"
 fi
 
 # Build the env -i command line. env clears inherited env; we re-add only

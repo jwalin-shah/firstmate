@@ -1,9 +1,9 @@
 {
   "schema": 1,
   "summary": {
-    "total": 24,
-    "scripts": 27,
-    "nodes": 27,
+    "total": 40,
+    "scripts": 35,
+    "nodes": 35,
     "missing": {}
   },
   "nodes": [
@@ -20,16 +20,22 @@
       "id": "fm-fleet-sync.sh"
     },
     {
+      "id": "fm-grill-me.sh"
+    },
+    {
       "id": "fm-guard.sh"
     },
     {
       "id": "fm-harness.sh"
     },
     {
-      "id": "fm-index.sh"
+      "id": "fm-init.sh"
     },
     {
       "id": "fm-inject-context.sh"
+    },
+    {
+      "id": "fm-intake.sh"
     },
     {
       "id": "fm-lang-cache.sh"
@@ -42,6 +48,9 @@
     },
     {
       "id": "fm-mm-lib.sh"
+    },
+    {
+      "id": "fm-pattern-check.sh"
     },
     {
       "id": "fm-peek.sh"
@@ -57,6 +66,9 @@
     },
     {
       "id": "fm-queue.sh"
+    },
+    {
+      "id": "fm-reflection-check.sh"
     },
     {
       "id": "fm-review-diff.sh"
@@ -77,6 +89,18 @@
       "id": "fm-teardown.sh"
     },
     {
+      "id": "fm-tool-audit.sh"
+    },
+    {
+      "id": "fm-transcripts-discover.sh"
+    },
+    {
+      "id": "fm-transcripts-ingest.sh"
+    },
+    {
+      "id": "fm-transcripts.sh"
+    },
+    {
       "id": "fm-wake-drain.sh"
     },
     {
@@ -91,18 +115,33 @@
   ],
   "edges": [
     {
-      "from": "fm-guard.sh",
-      "to": "fm-wake-drain.sh",
-      "kind": "subprocess"
+      "from": "fm-bootstrap.sh",
+      "to": "fm-init.sh",
+      "kind": "source"
     },
     {
-      "from": "fm-guard.sh",
-      "to": "fm-wake-lib.sh",
+      "from": "fm-brief.sh",
+      "to": "fm-init.sh",
+      "kind": "source"
+    },
+    {
+      "from": "fm-fleet-sync.sh",
+      "to": "fm-init.sh",
+      "kind": "source"
+    },
+    {
+      "from": "fm-grill-me.sh",
+      "to": "fm-init.sh",
       "kind": "source"
     },
     {
       "from": "fm-guard.sh",
-      "to": "fm-wake-lib.sh",
+      "to": "fm-init.sh",
+      "kind": "source"
+    },
+    {
+      "from": "fm-guard.sh",
+      "to": "fm-wake-drain.sh",
       "kind": "subprocess"
     },
     {
@@ -111,19 +150,84 @@
       "kind": "subprocess"
     },
     {
+      "from": "fm-harness.sh",
+      "to": "fm-init.sh",
+      "kind": "source"
+    },
+    {
+      "from": "fm-init.sh",
+      "to": "fm-mm-lib.sh",
+      "kind": "source"
+    },
+    {
+      "from": "fm-init.sh",
+      "to": "fm-mm-lib.sh",
+      "kind": "subprocess"
+    },
+    {
+      "from": "fm-init.sh",
+      "to": "fm-wake-lib.sh",
+      "kind": "source"
+    },
+    {
+      "from": "fm-init.sh",
+      "to": "fm-wake-lib.sh",
+      "kind": "subprocess"
+    },
+    {
+      "from": "fm-inject-context.sh",
+      "to": "fm-init.sh",
+      "kind": "source"
+    },
+    {
+      "from": "fm-intake.sh",
+      "to": "fm-init.sh",
+      "kind": "source"
+    },
+    {
+      "from": "fm-lang-cache.sh",
+      "to": "fm-init.sh",
+      "kind": "source"
+    },
+    {
+      "from": "fm-lock.sh",
+      "to": "fm-init.sh",
+      "kind": "source"
+    },
+    {
+      "from": "fm-merge-local.sh",
+      "to": "fm-init.sh",
+      "kind": "source"
+    },
+    {
       "from": "fm-mm-lib.sh",
       "to": "fm-bootstrap.sh",
       "kind": "subprocess"
     },
     {
-      "from": "fm-peek.sh",
-      "to": "fm-mm-lib.sh",
+      "from": "fm-pattern-check.sh",
+      "to": "fm-init.sh",
       "kind": "source"
     },
     {
       "from": "fm-peek.sh",
-      "to": "fm-mm-lib.sh",
-      "kind": "subprocess"
+      "to": "fm-init.sh",
+      "kind": "source"
+    },
+    {
+      "from": "fm-pr-check.sh",
+      "to": "fm-init.sh",
+      "kind": "source"
+    },
+    {
+      "from": "fm-project-mode.sh",
+      "to": "fm-init.sh",
+      "kind": "source"
+    },
+    {
+      "from": "fm-promote.sh",
+      "to": "fm-init.sh",
+      "kind": "source"
     },
     {
       "from": "fm-promote.sh",
@@ -131,24 +235,34 @@
       "kind": "subprocess"
     },
     {
-      "from": "fm-send.sh",
-      "to": "fm-mm-lib.sh",
+      "from": "fm-queue.sh",
+      "to": "fm-init.sh",
+      "kind": "source"
+    },
+    {
+      "from": "fm-reflection-check.sh",
+      "to": "fm-init.sh",
+      "kind": "source"
+    },
+    {
+      "from": "fm-review-diff.sh",
+      "to": "fm-init.sh",
       "kind": "source"
     },
     {
       "from": "fm-send.sh",
-      "to": "fm-mm-lib.sh",
-      "kind": "subprocess"
-    },
-    {
-      "from": "fm-spawn.sh",
-      "to": "fm-mm-lib.sh",
+      "to": "fm-init.sh",
       "kind": "source"
     },
     {
-      "from": "fm-spawn.sh",
-      "to": "fm-mm-lib.sh",
+      "from": "fm-session-start.sh",
+      "to": "fm-wake-drain.sh",
       "kind": "subprocess"
+    },
+    {
+      "from": "fm-spawn.sh",
+      "to": "fm-init.sh",
+      "kind": "source"
     },
     {
       "from": "fm-spawn.sh",
@@ -156,34 +270,29 @@
       "kind": "subprocess"
     },
     {
-      "from": "fm-teardown.sh",
-      "to": "fm-mm-lib.sh",
+      "from": "fm-status.sh",
+      "to": "fm-init.sh",
       "kind": "source"
     },
     {
       "from": "fm-teardown.sh",
-      "to": "fm-mm-lib.sh",
-      "kind": "subprocess"
+      "to": "fm-init.sh",
+      "kind": "source"
     },
     {
-      "from": "fm-wake-drain.sh",
-      "to": "fm-wake-lib.sh",
+      "from": "fm-transcripts-ingest.sh",
+      "to": "fm-init.sh",
       "kind": "source"
     },
     {
       "from": "fm-wake-drain.sh",
-      "to": "fm-wake-lib.sh",
-      "kind": "subprocess"
-    },
-    {
-      "from": "fm-watch.sh",
-      "to": "fm-mm-lib.sh",
+      "to": "fm-init.sh",
       "kind": "source"
     },
     {
       "from": "fm-watch.sh",
-      "to": "fm-mm-lib.sh",
-      "kind": "subprocess"
+      "to": "fm-init.sh",
+      "kind": "source"
     },
     {
       "from": "fm-watch.sh",
@@ -196,14 +305,9 @@
       "kind": "subprocess"
     },
     {
-      "from": "fm-watch.sh",
-      "to": "fm-wake-lib.sh",
+      "from": "fm-with-secrets.sh",
+      "to": "fm-init.sh",
       "kind": "source"
-    },
-    {
-      "from": "fm-watch.sh",
-      "to": "fm-wake-lib.sh",
-      "kind": "subprocess"
     },
     {
       "from": "fm-with-secrets.sh",

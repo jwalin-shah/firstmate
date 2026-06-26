@@ -6,9 +6,9 @@
 # the default branch, and local-only projects against the local default branch.
 # Usage: fm-review-diff.sh <task-id> [--stat]
 #   --stat prints only the stat summary; default prints stat summary plus full diff.
-set -eu
-
-FM_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+set -euo pipefail
+[ -n "${FM_ROOT:-}" ] || FM_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+. "$FM_ROOT/bin/fm-init.sh"
 "$FM_ROOT/bin/fm-guard.sh" || true
 
 usage() {
@@ -31,14 +31,13 @@ esac
 [ $# -le 2 ] || { usage; exit 1; }
 
 META="$FM_ROOT/state/$ID.meta"
-[ -f "$META" ] || { echo "error: no meta for task $ID at $META" >&2; exit 1; }
-
+[ -f "$META" ] || die "$ID: meta not found"
 WT=$(grep '^worktree=' "$META" | cut -d= -f2-)
 PROJ=$(grep '^project=' "$META" | cut -d= -f2-)
-[ -n "$WT" ] || { echo "error: meta for task $ID is missing worktree=" >&2; exit 1; }
-[ -n "$PROJ" ] || { echo "error: meta for task $ID is missing project=" >&2; exit 1; }
-[ -d "$WT" ] || { echo "error: worktree for task $ID is missing: $WT" >&2; exit 1; }
-[ -d "$PROJ" ] || { echo "error: project for task $ID is missing: $PROJ" >&2; exit 1; }
+[ -n "$WT" ] || die "$ID: meta missing worktree="
+[ -n "$PROJ" ] || die "$ID: meta missing project="
+[ -d "$WT" ] || die "$ID: worktree missing at $WT"
+[ -d "$PROJ" ] || die "$ID: project missing at $PROJ"
 
 default_branch() {
   local ref branch
@@ -56,13 +55,13 @@ default_branch() {
   return 1
 }
 
-DEFAULT=$(default_branch) || { echo "error: cannot determine default branch for $PROJ; expected origin/HEAD, main, or master" >&2; exit 1; }
+DEFAULT=$(default_branch) || die "$PROJ: no default branch found (origin/HEAD, main, or master)"
 
 BRANCH="fm/$ID"
 if ! git -C "$WT" rev-parse --verify --quiet "refs/heads/$BRANCH" >/dev/null; then
   BRANCH=$(git -C "$WT" symbolic-ref --quiet --short HEAD 2>/dev/null || true)
-  [ -n "$BRANCH" ] || { echo "error: branch fm/$ID does not exist and worktree $WT is detached" >&2; exit 1; }
-  git -C "$WT" rev-parse --verify --quiet "refs/heads/$BRANCH" >/dev/null || { echo "error: branch $BRANCH does not exist in $WT" >&2; exit 1; }
+  [ -n "$BRANCH" ] || die "$ID: branch fm/$ID does not exist and $WT is detached"
+  git -C "$WT" rev-parse --verify --quiet "refs/heads/$BRANCH" >/dev/null || die "$ID: branch $BRANCH not found in $WT"
 fi
 
 if git -C "$PROJ" remote get-url origin >/dev/null 2>&1; then
@@ -74,8 +73,8 @@ else
   BASE="$DEFAULT"
 fi
 
-git -C "$WT" rev-parse --verify --quiet "$BASE^{commit}" >/dev/null || { echo "error: base $BASE does not exist in $WT" >&2; exit 1; }
-git -C "$WT" rev-parse --verify --quiet "$BRANCH^{commit}" >/dev/null || { echo "error: branch $BRANCH does not resolve in $WT" >&2; exit 1; }
+git -C "$WT" rev-parse --verify --quiet "$BASE^{commit}" >/dev/null || die "$ID: base $BASE not found in $WT"
+git -C "$WT" rev-parse --verify --quiet "$BRANCH^{commit}" >/dev/null || die "$ID: branch $BRANCH does not resolve in $WT"
 
 echo "diff base: $BASE"
 if git -C "$WT" diff --quiet "$BASE...$BRANCH" --; then

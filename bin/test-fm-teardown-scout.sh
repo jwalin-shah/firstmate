@@ -8,7 +8,7 @@
 # teardown has many later steps (treehouse return, tmux kill, fm-tasks)
 # that we mock out so the only meaningful difference between the two
 # cases is the report-exists check we want to verify.
-set -u
+set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TEARDOWN="$ROOT/bin/fm-teardown.sh"

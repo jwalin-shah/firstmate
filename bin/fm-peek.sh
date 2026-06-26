@@ -2,12 +2,10 @@
 # Print the tail of a crewmate pane (bounded, for cheap diagnosis).
 # Usage: fm-peek.sh <window> [lines=40]
 #   <window> may be a bare window name (fm-xyz) or session:window.
-set -eu
-
-"$(dirname "${BASH_SOURCE[0]}")/fm-guard.sh" || true
-FM_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-# shellcheck source=bin/fm-mm-lib.sh
-. "$FM_ROOT/bin/fm-mm-lib.sh"
+set -euo pipefail
+[ -n "${FM_ROOT:-}" ] || FM_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+. "$FM_ROOT/bin/fm-init.sh"
+"$FM_ROOT/bin/fm-guard.sh" || true
 
 N=${2:-40}
 BACKEND=$(mm_available 2>/dev/null || echo tmux)

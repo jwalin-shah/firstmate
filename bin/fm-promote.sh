@@ -7,9 +7,9 @@
 # intended fix changes, create branch fm/<task-id>, implement, then report done
 # according to the project's delivery mode).
 # Usage: fm-promote.sh <task-id>
-set -eu
-
-FM_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+set -euo pipefail
+[ -n "${FM_ROOT:-}" ] || FM_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+. "$FM_ROOT/bin/fm-init.sh"
 "$FM_ROOT/bin/fm-guard.sh" || true
 ID=$1
 META="$FM_ROOT/state/$ID.meta"

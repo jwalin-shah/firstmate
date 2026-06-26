@@ -9,9 +9,9 @@
 #
 # Returns 0 if the brief passes all gates; non-zero otherwise.
 
-set -u
-
-FM_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+set -euo pipefail
+[ -n "${FM_ROOT:-}" ] || FM_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+. "$FM_ROOT/bin/fm-init.sh"
 PATTERNS_DIR="$FM_ROOT/data/patterns"
 REQUIRED_PATTERNS=(contractor memory routing parallelization reflection)
 

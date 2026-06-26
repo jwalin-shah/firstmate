@@ -29,11 +29,9 @@
 # kept as a fallback (FM_MM_FALLBACK_TMUX=1 forces it). pane= is recorded in the meta
 # alongside window= so downstream scripts can address the right pane whichever backend
 # is live; window= keeps the historical session:window shape for compat.
-set -eu
-
-FM_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-# shellcheck source=bin/fm-mm-lib.sh
-. "$FM_ROOT/bin/fm-mm-lib.sh"
+set -euo pipefail
+[ -n "${FM_ROOT:-}" ] || FM_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+. "$FM_ROOT/bin/fm-init.sh"
 
 # Opt-in secrets scoping: when FM_SECRETS_BACKEND=infisical, hand off to
 # bin/fm-with-secrets.sh, which fetches a per-project Infisical scope and
@@ -110,11 +108,11 @@ case "$ARG3" in
     ;;
   '')
     HARNESS=$("$FM_ROOT/bin/fm-harness.sh" crew)
-    LAUNCH=$(launch_template "$HARNESS") || { echo "error: no launch template for harness '$HARNESS' (from config/crew-harness or detection); pass a raw launch command to use an unverified adapter" >&2; exit 1; }
+    LAUNCH=$(launch_template "$HARNESS") || die "no launch template for '$HARNESS'; use a raw launch command for unverified adapters"
     ;;
   *)
     HARNESS=$ARG3
-    LAUNCH=$(launch_template "$HARNESS") || { echo "error: unknown harness '$HARNESS'; pass a raw launch command to use an unverified adapter" >&2; exit 1; }
+    LAUNCH=$(launch_template "$HARNESS") || die "unknown harness '$HARNESS'; use a raw launch command"
     ;;
 esac
 
@@ -133,7 +131,7 @@ if [ "${FM_SKIP_PATTERN_CHECK:-0}" != "1" ]; then
     exit 1
   fi
 fi
-[ -f "$BRIEF" ] || { echo "error: no brief at $BRIEF" >&2; exit 1; }
+[ -f "$BRIEF" ] || die "$ID: brief not found at $BRIEF"
 PROJ_ABS="$(cd "$PROJ" && pwd)"
 
 # Decide backend once and use it everywhere below. mm_ensure_daemon starts the
@@ -149,27 +147,19 @@ if [ "$BACKEND" = mintmux ]; then
   SES="$W"  # mintmux has one window per session; we use session-name == window-name for compat
   # Refuse a duplicate session up front; mm-ctl would otherwise return EACCES.
   if mm_list_panes "$W" | grep -q "^.\\+$W\$"; then
-    echo "error: session $W already exists in mintmux" >&2
-    exit 1
+    die "$W: session already exists in mintmux"
   fi
   # Seed command: cd into the project then exec the user's login shell so the
   # pane starts as an interactive shell in PROJ_ABS. The user's $SHELL is what
   # the harness / treehouse / git hooks expect for PS1 and signal handling.
   SEED_SHELL=${SHELL:-/bin/sh}
   SEED_CMD="cd '$PROJ_ABS' && exec '$SEED_SHELL'"
-  PANE_ID=$(mm_new_session "$W" "$SEED_CMD" "$PROJ_ABS") || {
-    echo "error: mintmux refused to create session $W" >&2
-    exit 1
-  }
+  PANE_ID=$(mm_new_session "$W" "$SEED_CMD" "$PROJ_ABS") || die "mintmux refused to create session $W"
   T="$SES:$W"  # legacy session:window shape, kept for downstream compat (fm-peek, fm-send)
 
   # Enter the treehouse worktree inside the freshly spawned shell. mm-send
   # appends a newline by default; that submits the command.
-  mm_send_blocking "$PANE_ID" "treehouse get" >/dev/null || {
-    echo "error: mintmux send to pane $PANE_ID failed" >&2
-    mm_kill_session "$W" >/dev/null 2>&1 || true
-    exit 1
-  }
+  mm_send_blocking "$PANE_ID" "treehouse get" >/dev/null || die "mintmux send to pane $PANE_ID failed"
 
   # treehouse get opens an interactive subshell (it does NOT exit on its own;
   # the agent harness that follows must `cd $WT && exec zsh` to take over).
@@ -218,8 +208,7 @@ else
   W="fm-$ID"
   T="$SES:$W"
   if tmux list-windows -t "$SES" -F '#{window_name}' | grep -qx "$W"; then
-    echo "error: window $T already exists" >&2
-    exit 1
+    die "window $T already exists"
   fi
 
   tmux new-window -d -t "$SES" -n "$W" -c "$PROJ_ABS"
@@ -236,16 +225,7 @@ else
     sleep 1
   done
   if [ -z "$WT" ]; then
-    echo "error: treehouse get did not enter a worktree within 60s; inspect window $T" >&2
-    exit 1
-||||||| 53e3dce
-# Wait for the treehouse subshell: the pane's cwd moves from the project to the worktree.
-WT=""
-for _ in $(seq 1 60); do
-  p=$(tmux display-message -p -t "$T" '#{pane_current_path}' 2>/dev/null || true)
-  if [ -n "$p" ] && [ "$p" != "$PROJ_ABS" ]; then
-    WT="$p"
-    break
+    die "$ID: treehouse did not enter a worktree within 60s; inspect $T"
   fi
 fi
 
@@ -371,7 +351,6 @@ case "$BACKEND" in
     tmux send-keys -t "$T" -l "$LAUNCH"
     sleep 0.3
     tmux send-keys -t "$T" Enter
-||||||| 53e3dce
 tmux send-keys -t "$T" -l "$LAUNCH"
 sleep 0.3
 tmux send-keys -t "$T" Enter
@@ -397,7 +376,6 @@ tmux send-keys -t "$T" Enter
     ) &
     ;;
 esac
-||||||| 53e3dce
 # Background: auto-accept trust/permission dialogs (claude/codex/pi; opencode has none).
 # Runs 4 checks over 32s post-launch; silently sends Enter whenever a trust prompt is
 # visible, and exits. If no dialog appears, this is a no-op. Background subshell so

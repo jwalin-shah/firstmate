@@ -11,10 +11,9 @@
 #
 # Reads from data/tasks.db (via the fm-tasks binary) +
 # state/.last-watcher-beat. Never writes; this is observation only.
-set -eu
-
-FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
-STATE="${FM_STATE_OVERRIDE:-$FM_ROOT/state}"
+set -euo pipefail
+[ -n "${FM_ROOT:-}" ] || FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+. "$FM_ROOT/bin/fm-init.sh"
 
 # Resolve tools once. We prefer fm-tasks (single binary, no SQL knowledge
 # needed in the script) and fall back to sqlite3 if it's not on PATH.

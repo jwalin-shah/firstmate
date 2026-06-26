@@ -228,6 +228,16 @@ mm_kill_session() {
   "$ctl" kill-session -sock="$sock" "$name" 2>/dev/null || true
 }
 
+_mm_parse_meta_panes() {
+  awk '/^meta /{
+    pid=""; sess=""
+    if (match($0, /id:([0-9]+)/)) { pid = substr($0, RSTART+3, RLENGTH-3) }
+    if (match($0, /session:([^ ]+)\]/)) { sess = substr($0, RSTART+8, RLENGTH-9) }
+    else if (match($0, /session:([^ ]+)$/)) { sess = substr($0, RSTART+8, RLENGTH-8) }
+    if (pid != "" && sess != "") print pid "\t" sess
+  }'
+}
+
 # mm_list_panes [session]: prints "<pane_id>\t<session>" per line.
 # The meta event is "meta map[panes:[map[id:N window:M]] session:NAME]"
 # (Go's fmt %v for a map[string]any). For a fresh session there is exactly
@@ -236,7 +246,7 @@ mm_kill_session() {
 # Substr math: `match()` reports RSTART at the START of the matched range.
 # For the "session:([^ ]+)" patterns the match starts at "s" of "session",
 # so the captured NAME begins RSTART+8 (skip "session:"). For the trailing
-# `]`-terminated form we subtract 1 extra char from the length to exclude it.
+# `]`-terminated form we subtract 1 extra character from the length to exclude it.
 #
 # No-filter mode: mm-ctl currently requires -session for list-panes
 # (verified: "send: cmd list_panes: session is required"). When called
@@ -250,15 +260,7 @@ mm_list_panes() {
   ctl=$(mm_ctl_bin) || return 1
   sock=$(mm_sock)
   if [ -n "$filter" ]; then
-    "$ctl" list-panes -sock="$sock" -session="$filter" 2>/dev/null | \
-      awk '/^meta /{
-        # Extract first id:N inside panes:[map[id:N
-        pid=""; sess=""
-        if (match($0, /id:([0-9]+)/)) { pid = substr($0, RSTART+3, RLENGTH-3) }
-        if (match($0, /session:([^ ]+)\]/)) { sess = substr($0, RSTART+8, RLENGTH-9) }
-        else if (match($0, /session:([^ ]+)$/)) { sess = substr($0, RSTART+8, RLENGTH-8) }
-        if (pid != "" && sess != "") print pid "\t" sess
-      }'
+    "$ctl" list-panes -sock="$sock" -session="$filter" 2>/dev/null | _mm_parse_meta_panes
     return 0
   fi
   # No-filter path: walk state/<id>.meta for sessions fm-spawn recorded.
@@ -273,13 +275,7 @@ mm_list_panes() {
     ses=$(awk -F= '/^session=/ { print $2; exit }' "$meta" 2>/dev/null)
     [ -n "$ses" ] || continue
     "$ctl" list-panes -sock="$sock" -session="$ses" 2>/dev/null | \
-      awk -v want="$ses" '/^meta /{
-        pid=""; sess=""
-        if (match($0, /id:([0-9]+)/)) { pid = substr($0, RSTART+3, RLENGTH-3) }
-        if (match($0, /session:([^ ]+)\]/)) { sess = substr($0, RSTART+8, RLENGTH-9) }
-        else if (match($0, /session:([^ ]+)$/)) { sess = substr($0, RSTART+8, RLENGTH-8) }
-        if (pid != "" && sess != "" && sess == want) print pid "\t" sess
-      }'
+      _mm_parse_meta_panes | awk -F'\t' -v want="$ses" '$2==want'
   done
 }
 

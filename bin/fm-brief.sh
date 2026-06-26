@@ -25,9 +25,9 @@
 #   tagged sections from the project's AGENTS.md plus the matching language
 #   cache entries. See AGENTS.md "Project AGENTS.md Schema" for the schema.
 #   Injection must stay under ~2s — no live network calls; lang-cache only.
-set -eu
-
-FM_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+set -euo pipefail
+[ -n "${FM_ROOT:-}" ] || FM_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+. "$FM_ROOT/bin/fm-init.sh"
 KIND=ship
 INJECT=0
 TASK_FILE=""
@@ -53,7 +53,7 @@ if [ ! -d "$PROJECT_DIR" ]; then
 fi
 
 BRIEF="$FM_ROOT/data/$ID/brief.md"
-[ -e "$BRIEF" ] && { echo "error: $BRIEF already exists" >&2; exit 1; }
+[ -e "$BRIEF" ] && die "$ID: brief already exists at $BRIEF"
 mkdir -p "$FM_ROOT/data/$ID"
 
 # Read the task description if we're injecting. The captain will pass either

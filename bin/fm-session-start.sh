@@ -4,7 +4,7 @@
 # Must complete within 5s timeout. Silent exit 0 on success.
 # Combines: backlog regeneration, status report, pattern injection,
 # session agenda + track init — all in one shot.
-set -u
+set -euo pipefail
 
 FM_ROOT="${CLAUDE_PROJECT_DIR:-}"
 if [ -z "$FM_ROOT" ] || [ ! -d "$FM_ROOT/state" ]; then
