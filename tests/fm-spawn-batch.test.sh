@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Behavior tests for fm-spawn.sh batch dispatch (`id=repo` pairs).
 # These exercise argument routing only: each spawn attempt fails fast at the missing-brief
-# check, which is reached before any tmux/treehouse side effect, so the tests create no
+# check, which is reached before any mintmux/treehouse side effect, so the tests create no
 # windows or worktrees. FM_SPAWN_NO_GUARD=1 keeps them off the live watcher guard / state.
 set -u
 

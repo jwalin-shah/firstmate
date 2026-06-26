@@ -48,7 +48,7 @@ state/               volatile runtime signals; gitignored
 .no-mistakes/        local validation state and evidence; gitignored
 ```
 
-Task ids are short kebab slugs with a random suffix (e.g. `fix-login-k3`); the tmux window is always `fm-<id>`.
+Task ids are short kebab slugs with a random suffix (e.g. `fix-login-k3`); the mintmux session is always `fm-<id>`.
 
 ## 3. Bootstrap (run at every session start)
 
@@ -74,7 +74,7 @@ Run `/fm-harness-adapters` for busy signatures, exit commands, and quirks.
 
 ## 5. Recovery (run at every session start, after bootstrap)
 
-You may have been restarted mid-flight. Reconcile before doing anything else: (1) `bin/fm-lock.sh` (if refused, another live session holds it — operate read-only); (2) `bin/fm-wake-drain.sh` (keep printed records as this turn's first queue); (3) `tmux list-windows -a -F '#{session_name}:#{window_name}' | grep ':fm-'` for live crewmates; (4) read `data/backlog.md`, every `state/*.meta`, every `state/*.status`; (5) orphan windows (no meta): peek, figure out, ask if unclear; (6) dead crewmates (meta, no window): `treehouse status`, salvage or report; (7) surface only what needs the captain — say nothing if nothing does; (8) handle drained wakes, then arm the watcher (section 8). All truth lives in tmux, state files, data/backlog.md, and treehouse; conversation memory is a cache.
+You may have been restarted mid-flight. Reconcile before doing anything else: (1) `bin/fm-lock.sh` (if refused, another live session holds it — operate read-only); (2) `bin/fm-wake-drain.sh` (keep printed records as this turn's first queue); (3) `mm-ctl list-panes 2>/dev/null | grep 'fm-'` for live crewmates; (4) read `data/backlog.md`, every `state/*.meta`, every `state/*.status`; (5) orphan panes (no meta): peek, figure out, ask if unclear; (6) dead crewmates (meta, no pane): `treehouse status`, salvage or report; (7) surface only what needs the captain — say nothing if nothing does; (8) handle drained wakes, then arm the watcher (section 8). All truth lives in mintmux panes, state files, data/backlog.md, and treehouse; conversation memory is a cache.
 
 ## 6. Project management
 

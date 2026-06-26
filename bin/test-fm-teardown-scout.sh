@@ -5,7 +5,7 @@
 # This is a brief test as the task brief asks, not a full unit suite.
 # We exercise the gate by running fm-teardown.sh against a fake task
 # whose meta says kind=scout, with/without a report file. The full
-# teardown has many later steps (treehouse return, tmux kill, fm-tasks)
+# teardown has many later steps (treehouse return, mintmux session kill, fm-tasks)
 # that we mock out so the only meaningful difference between the two
 # cases is the report-exists check we want to verify.
 set -euo pipefail
@@ -22,7 +22,7 @@ write_meta() {
     > "$ROOT/state/$id.meta"
 }
 
-# Stub treehouse, tmux, fm-tasks so the rest of fm-teardown is a no-op
+# Stub treehouse and fm-tasks so the rest of fm-teardown is a no-op
 # and the only thing the exit code reflects is the scout gate.
 # We prepend the stub dir to PATH and rely on a fresh bash invocation,
 # so the user's interactive grep alias is irrelevant (bash, not zsh).
@@ -34,15 +34,11 @@ cat > "$TEMP_BIN/treehouse" <<'EOF'
 #!/usr/bin/env bash
 exit 0
 EOF
-cat > "$TEMP_BIN/tmux" <<'EOF'
-#!/usr/bin/env bash
-exit 0
-EOF
 cat > "$TEMP_BIN/fm-tasks" <<'EOF'
 #!/usr/bin/env bash
 exit 0
 EOF
-chmod +x "$TEMP_BIN/treehouse" "$TEMP_BIN/tmux" "$TEMP_BIN/fm-tasks"
+chmod +x "$TEMP_BIN/treehouse" "$TEMP_BIN/fm-tasks"
 # Stock-grep PATH: /usr/bin must come before anything that aliases grep.
 STOCK_PATH=/usr/bin:/usr/sbin:/bin:/sbin
 

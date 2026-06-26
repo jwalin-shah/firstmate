@@ -2,16 +2,14 @@
 # Send one line of literal text to a crewmate pane, then Enter.
 # Usage: fm-send.sh <window> <text...>
 #   <window> may be a bare window name (fm-xyz) or session:window. Resolved to
-#   a mintmux pane id via mm_get_pane_for_session when the mintmux backend is
-#   live; tmux fallback uses send-keys as before.
+#   a mintmux pane id via mm_get_pane_for_session.
 # Special keys instead of text: fm-send.sh <window> --key Escape   (or Enter, C-c, ...)
 set -euo pipefail
 [ -n "${FM_ROOT:-}" ] || FM_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 . "$FM_ROOT/bin/fm-init.sh"
 "$FM_ROOT/bin/fm-guard.sh" || true
 
-# resolve name: on mintmux, "<window>" or "<session>:<window>" -> pane id;
-# on tmux, return session:window (legacy) unchanged.
+# resolve name: "<window>" or "<session>:<window>" -> session name for mintmux lookup.
 resolve() {
   case "$1" in
     *:*) echo "$1" ;;

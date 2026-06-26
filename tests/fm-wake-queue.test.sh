@@ -38,24 +38,6 @@ make_case() {
   dir="$TMP_ROOT/$name"
   fakebin="$dir/fakebin"
   mkdir -p "$dir/state" "$fakebin"
-  cat > "$fakebin/tmux" <<'SH'
-#!/usr/bin/env bash
-set -u
-if [ "${1:-}" = "list-windows" ]; then
-  if [ -n "${FM_FAKE_TMUX_WINDOW:-}" ]; then
-    printf '%s\n' "$FM_FAKE_TMUX_WINDOW"
-  fi
-  exit 0
-fi
-if [ "${1:-}" = "capture-pane" ]; then
-  if [ -n "${FM_FAKE_TMUX_CAPTURE:-}" ]; then
-    cat "$FM_FAKE_TMUX_CAPTURE"
-  fi
-  exit 0
-fi
-exit 1
-SH
-  chmod +x "$fakebin/tmux"
   printf '%s\n' "$dir"
 }
 
@@ -141,7 +123,7 @@ test_signal_catchup_without_running_watcher() {
   drain_out="$dir/drain.out"
   status_file="$state/task.status"
   printf 'working: first\n' > "$status_file"
-  PATH="$fakebin:$PATH" FM_MM_FALLBACK_TMUX=1 FM_STATE_OVERRIDE="$state" FM_POLL=1 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
+  PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$state" FM_POLL=1 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
   wait_for_exit "$!" 40 || fail "watcher did not exit for first signal"
   grep -F "signal: $status_file" "$out" >/dev/null || fail "watcher did not print first signal"
   FM_STATE_OVERRIDE="$state" "$DRAIN" > "$drain_out" || fail "drain after first signal failed"
@@ -149,31 +131,52 @@ test_signal_catchup_without_running_watcher() {
 
   printf 'done: second\n' >> "$status_file"
   : > "$out"
-  PATH="$fakebin:$PATH" FM_MM_FALLBACK_TMUX=1 FM_STATE_OVERRIDE="$state" FM_POLL=1 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
+  PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$state" FM_POLL=1 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
   wait_for_exit "$!" 40 || fail "watcher did not exit for second signal"
   grep -F "signal: $status_file" "$out" >/dev/null || fail "signal written with no watcher was not caught"
   pass "signal written while no watcher runs is caught on next run"
 }
 
 test_stale_enqueue_before_suppressor() {
-  local dir state fakebin out drain_out capture_file window key pane_hash
+  local dir state fakebin out drain_out capture_file entry key pane_hash
   dir=$(make_case stale)
   state="$dir/state"
   fakebin="$dir/fakebin"
   out="$dir/watch.out"
   drain_out="$dir/drain.out"
   capture_file="$dir/pane.txt"
-  window="test:fm-stale"
+  # mintmux pane: session=fm-stale, pane id=1. Watcher awk produces fm-stale:1.
   printf 'idle prompt' > "$capture_file"
-  key=$(printf '%s' "$window" | tr ':/.' '___')
+  entry="fm-stale:1"
+  key=$(printf '%s' "$entry" | tr ':/.' '___')
   pane_hash=$(hash_text "idle prompt")
   printf '%s' "$pane_hash" > "$state/.hash-$key"
   printf '1\n' > "$state/.count-$key"
-  PATH="$fakebin:$PATH" FM_MM_FALLBACK_TMUX=1 FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" FM_STATE_OVERRIDE="$state" FM_POLL=1 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
+  # Meta file lets mm_list_panes (no-filter path) enumerate this session.
+  printf 'session=fm-stale\nbackend=mintmux\nkind=ship\n' > "$state/stale-task.meta"
+  # Fake mm-ctl responds to ping, list-panes, and capture without a live server.
+  cat > "$fakebin/mm-ctl" <<'SH'
+#!/usr/bin/env bash
+cmd="${1:-}"
+case "$cmd" in
+  ping) echo "OK"; exit 0 ;;
+  list-panes)
+    sess=""
+    for arg in "$@"; do case "$arg" in -session=*) sess="${arg#-session=}" ;; esac; done
+    [ -n "$sess" ] && printf 'meta map[panes:[map[id:1 window:1]] session:%s]\nOK\n' "$sess"
+    exit 0 ;;
+  capture)
+    [ -n "${FM_FAKE_MM_CAPTURE:-}" ] && cat "$FM_FAKE_MM_CAPTURE"
+    exit 0 ;;
+esac
+exit 1
+SH
+  chmod +x "$fakebin/mm-ctl"
+  PATH="$fakebin:$PATH" FM_FAKE_MM_CAPTURE="$capture_file" FM_STATE_OVERRIDE="$state" FM_POLL=1 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
   wait_for_exit "$!" 40 || fail "watcher did not exit for stale pane"
-  grep -Fx "stale: $window" "$out" >/dev/null || fail "watcher did not print stale wake"
+  grep -Fx "stale: $entry" "$out" >/dev/null || fail "watcher did not print stale wake"
   FM_STATE_OVERRIDE="$state" "$DRAIN" > "$drain_out" || fail "drain after stale wake failed"
-  grep "$(printf '\tstale\t')" "$drain_out" | grep -F "$window" >/dev/null || fail "stale wake was not queued"
+  grep "$(printf '\tstale\t')" "$drain_out" | grep -F "$entry" >/dev/null || fail "stale wake was not queued"
   [ "$(cat "$state/.stale-$key" 2>/dev/null || true)" = "$pane_hash" ] || fail "stale suppressor was not written"
   pass "stale wake is queued before suppressor state is advanced"
 }
@@ -191,7 +194,7 @@ test_check_output_is_queued() {
 printf 'merged: https://example.test/pr/1\n'
 SH
   chmod +x "$check_file"
-  PATH="$fakebin:$PATH" FM_MM_FALLBACK_TMUX=1 FM_STATE_OVERRIDE="$state" FM_POLL=1 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=0 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
+  PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$state" FM_POLL=1 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=0 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
   wait_for_exit "$!" 40 || fail "watcher did not exit for check output"
   grep -F "check: $check_file: merged: https://example.test/pr/1" "$out" >/dev/null || fail "watcher did not print check wake"
   FM_STATE_OVERRIDE="$state" "$DRAIN" > "$drain_out" || fail "drain after check wake failed"
@@ -207,9 +210,9 @@ test_singleton_start() {
   fakebin="$dir/fakebin"
   out1="$dir/watch-one.out"
   out2="$dir/watch-two.out"
-  PATH="$fakebin:$PATH" FM_MM_FALLBACK_TMUX=1 FM_STATE_OVERRIDE="$state" FM_POLL=5 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out1" &
+  PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$state" FM_POLL=5 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out1" &
   pid1=$!
-  PATH="$fakebin:$PATH" FM_MM_FALLBACK_TMUX=1 FM_STATE_OVERRIDE="$state" FM_POLL=5 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out2" &
+  PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$state" FM_POLL=5 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out2" &
   pid2=$!
   sleep 0.5
   live=0
@@ -276,7 +279,7 @@ test_stale_watch_lock_reclaimed() {
   done
   mkdir "$state/.watch.lock"
   printf '%s\n' "$dead_pid" > "$state/.watch.lock/pid"
-  PATH="$fakebin:$PATH" FM_MM_FALLBACK_TMUX=1 FM_STATE_OVERRIDE="$state" FM_POLL=5 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
+  PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$state" FM_POLL=5 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
   pid=$!
   sleep 0.5
   live=0
@@ -300,7 +303,7 @@ test_live_stale_watch_lock_is_actionable() {
   printf '%s\n' "$$" > "$state/.watch.lock/pid"
   touch -t 200001010000 "$state/.last-watcher-beat"
   status=0
-  PATH="$fakebin:$PATH" FM_MM_FALLBACK_TMUX=1 FM_STATE_OVERRIDE="$state" FM_GUARD_GRACE=1 FM_POLL=5 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" 2> "$err" || status=$?
+  PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$state" FM_GUARD_GRACE=1 FM_POLL=5 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" 2> "$err" || status=$?
   [ "$status" -ne 0 ] || fail "watcher silently no-opped behind a live stale holder"
   grep -F 'heartbeat is stale' "$err" >/dev/null || fail "watcher did not explain the stale live lock"
   pass "live watcher lock with stale heartbeat is actionable"

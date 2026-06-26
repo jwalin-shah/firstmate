@@ -75,7 +75,7 @@ else
 fi
 
 # 3. status report end-to-end. We point state at the tmp dir; live pane
-#    count is allowed to be 0 (we are not in a tmux session). The script
+#    count is allowed to be 0 (we are not in a mintmux session). The script
 #    must reach the end and print "## Watcher".
 if out=$(FM_ROOT_OVERRIDE="$REPO_ROOT" FM_STATE_OVERRIDE="$tmp/state" \
             FM_DATA_OVERRIDE="$tmp/data" FM_TASKS_DB_OVERRIDE="$EMPTY_DB" \

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tear down a finished task: return the treehouse worktree, kill the tmux window,
+# Tear down a finished task: return the treehouse worktree, kill the mintmux session,
 # clear volatile state, refresh/prune the project's clone for PR-based ship tasks,
 # then print a backlog-refresh reminder.
 # REFUSES if the worktree holds work not on any remote, because treehouse return
@@ -27,7 +27,7 @@ PROJ=$(meta_get "$ID" project)
 # pane= is kept in meta for downstream consumers (fm-peek, fm-send) and shell tooling
 # that may want to inspect the live pane id; teardown only needs session= to kill.
 BACKEND=$(meta_get "$ID" backend)
-[ -n "$BACKEND" ] || BACKEND=tmux
+[ -n "$BACKEND" ] || BACKEND=mintmux
 SESS=$(meta_get "$ID" session)
 
 KIND=$(meta_get "$ID" kind)

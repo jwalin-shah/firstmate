@@ -12,7 +12,7 @@
 #     recorded in state/<id>.meta (a session= line), so the watcher can
 #     observe active panes even when mm-ctl's no-session list-panes call
 #     errors out. The fallback walks the state dir; meta files lacking
-#     a session= line (tmux-fallback tasks) are ignored.
+#     a session= line (legacy or non-mintmux tasks) are ignored.
 #
 # Strategy: replace mm-ctl with a stub on a fake PATH; the stub replies to
 # `list-panes -session NAME` with a synthetic "meta ... session:NAME" line

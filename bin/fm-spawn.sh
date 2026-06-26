@@ -283,7 +283,7 @@ case "$BACKEND" in
   mintmux)
     # mm-send appends a newline by default; that submits the launch command.
     # Slash commands open a completion popup in some TUIs (verified on codex);
-    # submitting too fast selects nothing, so the same 1.2s grace tmux used.
+    # submitting too fast selects nothing, so we give 1.2s grace for slash commands.
     mm_send_blocking "$PANE_ID" "$LAUNCH" >/dev/null || {
       echo "error: mintmux send launch to pane $PANE_ID failed" >&2
       mm_kill_session "$W" >/dev/null 2>&1 || true

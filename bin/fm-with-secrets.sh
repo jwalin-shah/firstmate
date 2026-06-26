@@ -2,13 +2,13 @@
 # fm-with-secrets.sh <project-slug> <task-id> <project-dir> [harness|launch-command] [--scout]
 #
 # Fetch Infisical secrets scoped to <project-slug> and exec fm-spawn.sh with
-# a clean env (`env -i`) plus only PATH/HOME/USER/LANG/LC_ALL/TZ/TMUX and the
+# a clean env (`env -i`) plus only PATH/HOME/USER/LANG/LC_ALL/TZ and the
 # fetched key=value pairs. This stops firstmate's own global shell exports
 # (AGENT_KEYCHAIN_SECRETS, ad-hoc *API_KEY vars, etc.) from leaking into
-# every crewmate tmux pane.
+# every crewmate mintmux pane.
 #
 # Per-project scope is the matrix from data/secrets-mgmt-3q/report.md §5:
-#   orbit, odysseus, odyssey-unify            -> /providers /llm
+#   odysseus, odyssey-unify                   -> /providers /llm
 #   inbox, agent-stack                        -> /llm /infra
 #   firstmate, machine-bootstrap, tensor-logic,
 #     pcr-core, btw-research, _scratch,
@@ -19,7 +19,7 @@
 #
 # Auth: sources ~/.infisical_machine.env for INFISICAL_CLIENT_ID/SECRET
 # (machine-identity, non-interactive). Without it, infisical falls back to
-# an interactive login which fails in a non-tty tmux pane.
+# an interactive login which fails in a non-tty mintmux pane.
 #
 # This script is invoked by bin/fm-spawn.sh when FM_SECRETS_BACKEND=infisical
 # is set; the flag is opt-in so default spawn behavior is unchanged.
@@ -36,7 +36,7 @@ shift 3
 # new project's first spawn fails loud rather than silently getting too few
 # keys (we want the failure to surface, not a quiet partial scope).
 case "$PROJ" in
-  orbit|odysseus|odyssey-unify)
+  odysseus|odyssey-unify)
     PATHS=(/providers /llm) ;;
   inbox|agent-stack)
     PATHS=(/llm /infra) ;;
@@ -47,7 +47,7 @@ case "$PROJ" in
 esac
 
 # Source machine-identity env so infisical does not try an interactive login
-# in a non-tty tmux pane. If the file is missing, surface a clear message -
+# in a non-tty mintmux pane. If the file is missing, surface a clear message -
 # never fall back to "use whatever is in the calling shell" (that would
 # defeat the whole point of scoped keys).
 MACHINE_ENV="$HOME/.infisical_machine.env"
@@ -78,7 +78,7 @@ fi
 # the harmless shell vars the agent process needs plus each KEY=VALUE from
 # the temp dotenv. Using `xargs` keeps quoting safe; entries without '='
 # (comments, blank lines) are skipped by grep -v '^#' + xargs handles the rest.
-PRESERVE=(PATH HOME USER LANG LC_ALL TZ TMUX)
+PRESERVE=(PATH HOME USER LANG LC_ALL TZ)
 PRESERVE_ARGS=()
 for v in "${PRESERVE[@]}"; do
   if [ -n "${!v-}" ]; then

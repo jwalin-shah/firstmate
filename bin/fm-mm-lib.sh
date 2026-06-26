@@ -81,43 +81,23 @@ mm_log() {
   printf '%s\n' "${FM_MM_LOG:-/tmp/mintmux.log}"
 }
 
-# mm_available: prints "mintmux" or "tmux" and exits 0 if a usable backend is
-# present; non-zero only when both backends are missing.
+# mm_available: prints "mintmux" and exits 0 if mintmux is reachable; non-zero otherwise.
 mm_available() {
-  if [ "${FM_MM_FALLBACK_TMUX:-0}" = "1" ]; then
-    if command -v tmux >/dev/null 2>&1; then
-      printf '%s\n' "tmux"; return 0
-    fi
-    return 1
-  fi
   local bin ctl sock
   bin=$(mm_bin) || true
   ctl=$(mm_ctl_bin) || true
   sock=$(mm_sock)
   if [ -n "$bin" ] && [ -n "$ctl" ] && [ -S "$sock" ]; then
-    # Verify socket actually responds to a ping.
     if "$ctl" ping -sock="$sock" >/dev/null 2>&1; then
       printf '%s\n' "mintmux"; return 0
     fi
-  fi
-  if command -v tmux >/dev/null 2>&1; then
-    printf '%s\n' "tmux"; return 0
   fi
   return 1
 }
 
 # mm_ensure_daemon: start the mintmux server if its socket is missing. Prints
-# the backend ("mintmux" or "tmux") on stdout. When started, returns after a
-# successful ping.
+# "mintmux" on stdout when ready. Errors if mintmux is unavailable.
 mm_ensure_daemon() {
-  # Forced tmux fallback wins outright.
-  if [ "${FM_MM_FALLBACK_TMUX:-0}" = "1" ]; then
-    if command -v tmux >/dev/null 2>&1; then
-      printf '%s\n' "tmux"; return 0
-    fi
-    echo "error: FM_MM_FALLBACK_TMUX=1 but tmux is not installed" >&2
-    return 1
-  fi
 
   local bin sock log ctl
   bin=$(mm_bin)
