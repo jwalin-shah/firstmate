@@ -1,0 +1,147 @@
+#!/usr/bin/env bash
+# fm-fleet — AXI-compliant fleet status for firstmate.
+# Reads state/*.meta + state/*.status and shows live crewmates.
+set -eu
+
+FM_ROOT="${FM_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+STATE="${FM_STATE_OVERRIDE:-$FM_ROOT/state}"
+
+MODE="toon"  # or "json"
+FILTER=""
+
+usage() {
+  cat <<'HELP'
+Usage: fm-fleet [subcommand] [flags]
+
+Subcommands:
+  list        (default) Show live crewmates
+  view <id>   Show full detail for one crewmate
+
+Flags:
+  --json     Output NDJSON instead of TOON
+  --running  Only crewmates with active mintmux sessions
+  --help     Show this help
+
+Without args, shows all crewmates with live panes.
+HELP
+  exit 0
+}
+
+# Parse flags
+POS=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --json) MODE="json" ;;
+    --running) FILTER="running" ;;
+    --help) usage ;;
+    list) ;;
+    view) MODE="view"; shift; VIEW_ID="${1:-}"; [ -n "$VIEW_ID" ] || { echo "error: view requires a task id"; exit 2; } ;;
+    *) POS+=("$1") ;;
+  esac
+  shift
+done
+
+# Collect crewmate data from state files
+CREWMATES=()
+for meta in "$STATE"/*.meta; do
+  [ -f "$meta" ] || continue
+  id=$(basename "$meta" .meta)
+  wt=$(grep '^worktree=' "$meta" | cut -d= -f2-)
+  pane=$(grep '^pane=' "$meta" | cut -d= -f2- || echo "")
+  proj=$(basename "$wt" 2>/dev/null || echo "?")
+  harness=$(grep '^harness=' "$meta" | cut -d= -f2- || echo "?")
+  kind=$(grep '^kind=' "$meta" | cut -d= -f2- || echo "?")
+  mode=$(grep '^mode=' "$meta" | cut -d= -f2- || echo "?")
+  win=$(grep '^window=' "$meta" | cut -d= -f2- || echo "?")
+  st=$(tail -1 "$STATE/$id.status" 2>/dev/null || echo "")
+  CREWMATES+=("$id|$pane|$proj|$harness|$kind|$mode|$win|$st")
+done
+
+# Filter to running (has a pane connected to mintmux)
+if [ "$FILTER" = "running" ]; then
+  RUNNING=()
+  for c in "${CREWMATES[@]}"; do
+    pane=$(echo "$c" | cut -d'|' -f2)
+    [ -n "$pane" ] && RUNNING+=("$c")
+  done
+  CREWMATES=("${RUNNING[@]}")
+fi
+
+count=${#CREWMATES[@]}
+
+# View single crewmate
+if [ "${MODE:-}" = "view" ] && [ -n "${VIEW_ID:-}" ]; then
+  for c in "${CREWMATES[@]}"; do
+    id=$(echo "$c" | cut -d'|' -f1)
+    [ "$id" != "$VIEW_ID" ] && continue
+    pane=$(echo "$c" | cut -d'|' -f2)
+    proj=$(echo "$c" | cut -d'|' -f3)
+    harness=$(echo "$c" | cut -d'|' -f4)
+    kind=$(echo "$c" | cut -d'|' -f5)
+    mode=$(echo "$c" | cut -d'|' -f6)
+    win=$(echo "$c" | cut -d'|' -f7)
+    st=$(echo "$c" | cut -d'|' -f8)
+    meta_full=$(cat "$STATE/$id.meta" 2>/dev/null || echo "")
+    if [ "$MODE" = "json" ]; then
+      echo "{\"id\":\"$id\",\"project\":\"$proj\",\"harness\":\"$harness\",\"kind\":\"$kind\",\"mode\":\"$mode\",\"window\":\"$win\",\"pane\":\"$pane\",\"status\":\"$st\",\"meta\":\"$(echo "$meta_full" | tr '\n' ' ')\"}"
+    else
+      echo "id: $id"
+      echo "project: $proj"
+      echo "harness: $harness"
+      echo "kind: $kind"
+      echo "mode: $mode"
+      echo "worktree: $(grep '^worktree=' "$STATE/$id.meta" | cut -d= -f2-)"
+      echo "backend: $(grep '^backend=' "$STATE/$id.meta" | cut -d= -f2-)"
+      echo "pane: $pane"
+      echo "window: $win"
+      echo "last status: ${st:-none}"
+    fi
+    exit 0
+  done
+  echo "fm-fleet: no crewmate '$VIEW_ID' found"
+  exit 1
+fi
+
+# List output
+if [ "$count" -eq 0 ]; then
+  if [ "$MODE" = "json" ]; then
+    echo '{"count":0,"crewmates":[]}'
+  else
+    echo "fm-fleet: 0 crewmates"
+  fi
+  exit 0
+fi
+
+if [ "$MODE" = "json" ]; then
+  echo -n '{"count":'"$count"',"crewmates":['
+  first=true
+  for c in "${CREWMATES[@]}"; do
+    $first || echo -n ","
+    first=false
+    id=$(echo "$c" | cut -d'|' -f1)
+    pane=$(echo "$c" | cut -d'|' -f2)
+    proj=$(echo "$c" | cut -d'|' -f3)
+    harness=$(echo "$c" | cut -d'|' -f4)
+    kind=$(echo "$c" | cut -d'|' -f5)
+    mode=$(echo "$c" | cut -d'|' -f6)
+    st=$(echo "$c" | cut -d'|' -f8)
+    echo -n "{\"id\":\"$id\",\"project\":\"$proj\",\"harness\":\"$harness\",\"kind\":\"$kind\",\"mode\":\"$mode\",\"pane\":\"$pane\",\"status\":\"$st\"}"
+  done
+  echo ']}'
+else
+  echo "fleet: $count crewmates"
+  echo "crewmates[$count]{id,project,harness,kind,mode,status}:"
+  for c in "${CREWMATES[@]}"; do
+    id=$(echo "$c" | cut -d'|' -f1)
+    proj=$(echo "$c" | cut -d'|' -f3)
+    harness=$(echo "$c" | cut -d'|' -f4)
+    kind=$(echo "$c" | cut -d'|' -f5)
+    mode=$(echo "$c" | cut -d'|' -f6)
+    st=$(echo "$c" | cut -d'|' -f8)
+    [ -n "$st" ] || st="-"
+    echo "  \"$id\",$proj,$harness,$kind,$mode,$st"
+  done
+  echo "help[2]:"
+  echo "  fm-fleet view <id> — full crewmate detail"
+  echo "  fm-fleet --running — only active panes"
+fi
