@@ -932,10 +932,148 @@ func isValidID(s string) bool {
 	return true
 }
 
+// cmdNext: fm-tasks next [--limit N] — print queued tasks ready to dispatch
+// (not blocked by any inflight/queued task). Ordered by added_at ASC.
+func cmdNext(db *sql.DB, args []string) {
+	fs := flag.NewFlagSet("next", flag.ContinueOnError)
+	fs.SetOutput(os.Stdout)
+	limit := fs.Int("limit", 5, "max tasks to print")
+	if err := fs.Parse(args); err != nil {
+		dieUsage("--limit N is optional")
+	}
+
+	// A queued task is ready when its blocker is either absent (NULL) or in
+	// status done/failed (i.e. the dependency is satisfied).
+	rows, err := db.Query(`
+		SELECT t.id, t.title, t.repo, t.kind, t.blocked_by, t.blocked_reason
+		FROM tasks t
+		WHERE t.status = 'queued'
+		  AND (
+		    t.blocked_by IS NULL
+		    OR EXISTS (
+		      SELECT 1 FROM tasks b
+		      WHERE b.id = t.blocked_by AND b.status IN ('done','failed')
+		    )
+		  )
+		ORDER BY t.added_at ASC, t.id ASC
+		LIMIT ?`, *limit)
+	if err != nil {
+		dieError(err, "query ready tasks")
+	}
+	defer rows.Close()
+
+	type row struct {
+		ID, Title, Repo, Kind string
+		BlockedBy, Reason     sql.NullString
+	}
+	var ready []row
+	for rows.Next() {
+		var r row
+		if err := rows.Scan(&r.ID, &r.Title, &r.Repo, &r.Kind, &r.BlockedBy, &r.Reason); err != nil {
+			dieError(err, "scan row")
+		}
+		ready = append(ready, r)
+	}
+	if err := rows.Err(); err != nil {
+		dieError(err, "iterate rows")
+	}
+	if len(ready) == 0 {
+		fmt.Println("next: nothing ready (queue empty or all tasks blocked)")
+		return
+	}
+	fmt.Printf("next: %d task(s) ready to dispatch\n", len(ready))
+	for _, r := range ready {
+		fmt.Printf("  %s  [%s/%s]  %s\n", r.ID, r.Repo, r.Kind, r.Title)
+	}
+}
+
+// cmdWhy: fm-tasks why <id> — trace the blocker chain for a task.
+// Walks the blocked_by chain up to 10 levels deep and prints each hop's status.
+func cmdWhy(db *sql.DB, args []string) {
+	if len(args) < 1 {
+		dieUsage("<id> required")
+	}
+	startID := args[0]
+
+	type hop struct {
+		ID, Title, Status, BlockedBy, Reason string
+	}
+	var chain []hop
+
+	cur := startID
+	seen := map[string]bool{}
+	for i := 0; i < 10; i++ {
+		if seen[cur] {
+			fmt.Println("why: cycle detected at", cur)
+			break
+		}
+		seen[cur] = true
+		var h hop
+		var bb, reason sql.NullString
+		err := db.QueryRow(`SELECT id, title, status, blocked_by, blocked_reason FROM tasks WHERE id = ?`, cur).
+			Scan(&h.ID, &h.Title, &h.Status, &bb, &reason)
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				fmt.Printf("why: task %q not found in tasks.db\n", cur)
+				return
+			}
+			dieError(err, "query task")
+		}
+		if bb.Valid {
+			h.BlockedBy = bb.String
+		}
+		if reason.Valid {
+			h.Reason = reason.String
+		}
+		chain = append(chain, h)
+		if h.BlockedBy == "" || h.Status == "done" || h.Status == "failed" {
+			break
+		}
+		cur = h.BlockedBy
+	}
+
+	if len(chain) == 0 {
+		fmt.Println("why: no chain found")
+		return
+	}
+	root := chain[0]
+	switch root.Status {
+	case "queued":
+		if root.BlockedBy == "" {
+			fmt.Printf("why: %s is READY — queued with no blocker\n", root.ID)
+			return
+		}
+		fmt.Printf("why: %s is BLOCKED\n", root.ID)
+	case "inflight":
+		fmt.Printf("why: %s is INFLIGHT — already running\n", root.ID)
+		return
+	case "done":
+		fmt.Printf("why: %s is DONE\n", root.ID)
+		return
+	case "failed":
+		fmt.Printf("why: %s FAILED\n", root.ID)
+		return
+	}
+
+	for i, h := range chain {
+		indent := strings.Repeat("  ", i)
+		blocker := "none"
+		if h.BlockedBy != "" {
+			blocker = h.BlockedBy
+		}
+		reason := h.Reason
+		if reason == "" {
+			reason = "-"
+		}
+		fmt.Printf("%s[%s] %s  status=%s  blocks-on=%s  reason=%s\n",
+			indent, h.ID, h.Title, h.Status, blocker, reason)
+	}
+}
+
 func main() {
 	if len(os.Args) < 2 {
 		fmt.Fprintln(os.Stdout, "usage: fm-tasks <subcommand> [args]")
-		fmt.Fprintln(os.Stdout, "subcommands: ls, get, add, start, done, fail, unblock, unblocked-by, meta, migrate")
+		fmt.Fprintln(os.Stdout, "subcommands: ls, get, add, start, done, fail, unblock, unblocked-by, next, why, meta, migrate")
 		os.Exit(2)
 	}
 	sub := os.Args[1]
@@ -961,6 +1099,10 @@ func main() {
 		cmdUnblock(db, rest)
 	case "unblocked-by":
 		cmdUnblockedBy(db, rest)
+	case "next":
+		cmdNext(db, rest)
+	case "why":
+		cmdWhy(db, rest)
 	case "meta":
 		cmdMeta(db, rest)
 	case "migrate":
@@ -968,7 +1110,7 @@ func main() {
 	default:
 		fmt.Fprintf(os.Stdout, "usage: fm-tasks <subcommand> [args]\n")
 		fmt.Fprintf(os.Stdout, "error: unknown subcommand %q\n", sub)
-		fmt.Fprintln(os.Stdout, "help: valid subcommands: ls, get, add, start, done, fail, unblock, unblocked-by, meta, migrate")
+		fmt.Fprintln(os.Stdout, "help: valid subcommands: ls, get, add, start, done, fail, unblock, unblocked-by, next, why, meta, migrate")
 		os.Exit(2)
 	}
 }

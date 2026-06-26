@@ -308,6 +308,58 @@ mm_send_blocking() {
 # Uses the mm-ctl capture subcommand (added alongside firstmate's mintmux
 # wire-up). Bytes are raw PTY output (CR/LF/ANSI included); callers that
 # want plain text pipe through `tr -d '\r' | sed -E 's/\x1b\[[0-9;]*[A-Za-z]//g'`.
+# mm_pane_for_task <id>: read the pane id from state/<id>.meta.
+mm_pane_for_task() {
+  meta_get "$1" pane
+}
+
+# mm_kill_task <id>: kill the mintmux session that owns a task.
+mm_kill_task() {
+  local sess
+  sess=$(meta_get "$1" session) || return 0
+  [ -n "$sess" ] || return 0
+  mm_kill_session "$sess"
+}
+
+# mm_send_task <id> <text>: send text to the task's pane.
+mm_send_task() {
+  local pane
+  pane=$(mm_pane_for_task "$1") || return 1
+  [ -n "$pane" ] || { echo "error: no pane recorded for task $1" >&2; return 1; }
+  mm_send_blocking "$pane" "$2"
+}
+
+# mm_pane_for_task <id>: print the mintmux pane id for a firstmate task.
+# Reads pane= from state/<id>.meta — written by fm-spawn.
+mm_pane_for_task() {
+  local id=$1
+  meta_get "$id" pane
+}
+
+# mm_kill_task <id>: kill the mintmux session backing a firstmate task.
+# Equivalent to mm_kill_session "fm-<id>" but derived from meta so the session
+# name does not need to be known by the caller.
+mm_kill_task() {
+  local id=$1
+  local sess
+  sess=$(meta_get "$id" session)
+  [ -n "$sess" ] || sess="fm-$id"
+  mm_kill_session "$sess" 2>/dev/null || true
+}
+
+# mm_send_task <id> <text>: send text + newline to a task's pane.
+# Reads pane= from meta; fails if the task has no pane recorded.
+mm_send_task() {
+  local id=$1; shift
+  local pane
+  pane=$(mm_pane_for_task "$id")
+  if [ -z "$pane" ]; then
+    echo "error: mm_send_task: no pane recorded for task $id" >&2
+    return 1
+  fi
+  mm_send_blocking "$pane" "$*"
+}
+
 mm_capture_pane() {
   local pane=$1 max=${2:-0}
   local ctl sock
