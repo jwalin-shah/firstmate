@@ -17,8 +17,8 @@ ID=${1:?usage: fm-merge-local.sh <task-id>}
 META="$FM_ROOT/state/$ID.meta"
 [ -f "$META" ] || { echo "error: no meta for task $ID at $META" >&2; exit 1; }
 
-PROJ=$(grep '^project=' "$META" | cut -d= -f2-)
-MODE=$(grep '^mode=' "$META" | cut -d= -f2- || true)
+PROJ=$(meta_get "$ID" project)
+MODE=$(meta_get "$ID" mode)
 [ "$MODE" = local-only ] || { echo "error: task $ID is mode=$MODE, not local-only; merge it the normal way (gh-axi pr merge / captain)" >&2; exit 1; }
 
 default_branch() {

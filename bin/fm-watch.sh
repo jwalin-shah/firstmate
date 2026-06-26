@@ -56,6 +56,11 @@ HEARTBEAT_MAX=${FM_HEARTBEAT_MAX:-7200}  # heartbeat backoff cap
 CHECK_INTERVAL=${FM_CHECK_INTERVAL:-300}  # seconds between *.check.sh sweeps
 CHECK_TIMEOUT=${FM_CHECK_TIMEOUT:-30}     # seconds allowed per *.check.sh
 SIGNAL_GRACE=${FM_SIGNAL_GRACE:-30}   # seconds to linger after a signal so trailing
+# Transcript summarizer: run fm-transcript-summarizer.py every N seconds in the
+# background. Default 300s (5 min). Set FM_SUMMARIZER_INTERVAL=0 to disable.
+SUMMARIZER_INTERVAL=${FM_SUMMARIZER_INTERVAL:-300}
+SUMMARIZER_BATCH=${FM_SUMMARIZER_BATCH:-20}
+SUMMARIZER_BIN="$FM_ROOT/bin/fm-transcript-summarizer.py"
                                       # signals (a status write, then the same turn's
                                       # turn-end hook) coalesce into one wake
 # Busy signatures per harness, OR-ed. Extend via env when new adapters are verified.
@@ -195,7 +200,7 @@ EOF
       id=$(basename "$f" .status)
       META="$STATE/$id.meta"
       [ -f "$META" ] || continue
-      KIND=$(grep '^kind=' "$META" 2>/dev/null | cut -d= -f2- || true)
+      KIND=$(meta_get "$id" kind)
       [ "$KIND" = scout ] || continue
       last=$(tail -1 "$f" 2>/dev/null || true)
       case "$last" in
@@ -227,29 +232,16 @@ EOF
   # stale state is reported once (.stale-* remembers the hash already reported).
   #
   # Backend: mintmux pane ids come from mm_list_panes (one "<pane>\t<session>"
-  # line per pane). tmux fallback enumerates session:window names. The hash,
-  # count, and stale files all key off the entry name so they are stable across
-  # a backend switch.
-  # Tests force the tmux branch by exporting FM_MM_FALLBACK_TMUX=1 so a live
-  # mintmux daemon in CI cannot flip the backend mid-run.
-  if [ "${FM_MM_FALLBACK_TMUX:-0}" = "1" ]; then
-    watcher_backend=tmux
-  else
-    watcher_backend=$(mm_available 2>/dev/null || echo tmux)
-  fi
-  if [ "$watcher_backend" = mintmux ]; then
+  # Enumerate panes via mintmux. Hash and count files key off the entry name.
+  # If mintmux is unreachable, skip pane heartbeats this tick — don't fall back to tmux.
+  pane_list=""
+  if mm_ping 2>/dev/null; then
     pane_list=$(mm_list_panes | awk -F'\t' '$2 ~ /^fm-/ {print $2":"$1}' || true)
-  else
-    pane_list=$(tmux list-windows -a -F '#{session_name}:#{window_name}' 2>/dev/null | grep ':fm-' || true)
   fi
   while IFS= read -r w; do
     [ -n "$w" ] || continue
-    if [ "$watcher_backend" = mintmux ]; then
-      pane_id=${w##*:}
-      tail40=$(mm_capture_pane "$pane_id" 4096 2>/dev/null || true)
-    else
-      tail40=$(tmux capture-pane -p -t "$w" -S -40 2>/dev/null || true)
-    fi
+    pane_id=${w##*:}
+    tail40=$(mm_capture_pane "$pane_id" 4096 2>/dev/null || true)
     h=$(printf '%s' "$tail40" | hash_pane)
     key=$(printf '%s' "$w" | tr ':/.' '___')
     hf="$STATE/.hash-$key"
@@ -274,6 +266,27 @@ EOF
       echo 0 > "$cf"
     fi
   done <<< "$pane_list"
+
+  # Transcript summarizer: run fm-transcript-summarizer.py in the background
+  # every SUMMARIZER_INTERVAL seconds so new transcripts get MLX summaries
+  # without requiring a manual trigger. Runs detached (nohup &) so it never
+  # blocks the watcher cycle; a lock file prevents overlapping runs.
+  if [ "${SUMMARIZER_INTERVAL:-0}" -gt 0 ] && [ -f "$SUMMARIZER_BIN" ]; then
+    SUMMARIZER_LOCK="$STATE/.summarizer.lock"
+    SUMMARIZER_STAMP="$STATE/.last-summarizer"
+    if [ "$(age_of "$SUMMARIZER_STAMP")" -ge "$SUMMARIZER_INTERVAL" ]; then
+      if ! [ -f "$SUMMARIZER_LOCK" ] || ! kill -0 "$(cat "$SUMMARIZER_LOCK" 2>/dev/null)" 2>/dev/null; then
+        touch "$SUMMARIZER_STAMP"
+        (
+          echo $$ > "$SUMMARIZER_LOCK"
+          TRANSCRIPT_BATCH_SIZE="$SUMMARIZER_BATCH" python3 "$SUMMARIZER_BIN" \
+            >> "$STATE/summarizer.log" 2>&1
+          rm -f "$SUMMARIZER_LOCK"
+        ) &
+        disown $!
+      fi
+    fi
+  fi
 
   # Heartbeat: firstmate reviews the whole fleet at a regular cadence no matter
   # what. Time-based via .last-heartbeat mtime; interval doubles per consecutive

@@ -32,8 +32,8 @@ esac
 
 META="$FM_ROOT/state/$ID.meta"
 [ -f "$META" ] || die "$ID: meta not found"
-WT=$(grep '^worktree=' "$META" | cut -d= -f2-)
-PROJ=$(grep '^project=' "$META" | cut -d= -f2-)
+WT=$(meta_get "$ID" worktree)
+PROJ=$(meta_get "$ID" project)
 [ -n "$WT" ] || die "$ID: meta missing worktree="
 [ -n "$PROJ" ] || die "$ID: meta missing project="
 [ -d "$WT" ] || die "$ID: worktree missing at $WT"

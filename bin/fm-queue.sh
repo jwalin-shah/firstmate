@@ -296,27 +296,23 @@ sys.stdout.write("\n".join(out))
     if [ ! -f "$META" ]; then
       worktree_ok=1
     else
-      worktree_line=$(grep '^worktree=' "$META" 2>/dev/null | cut -d= -f2- || true)
+      worktree_line=$(meta_get "$ID" worktree)
       if [ -z "$worktree_line" ] || [ "$worktree_line" = "missing" ]; then
         worktree_ok=1
       fi
     fi
 
-    # Signal 2: pane gone. Probe mintmux first, then tmux fallback.
+    # Signal 2: pane gone. Probe mintmux only (tmux backend deprecated).
     pane_gone=0
     ctl=$(command -v mm-ctl 2>/dev/null || true)
-    sock="${TMPDIR:-/tmp}/mintmux.sock"
+    sock="/tmp/mintmux-$(id -u).sock"
     if [ -n "$ctl" ] && [ -S "$sock" ]; then
       if ! "$ctl" list-panes -sock="$sock" 2>/dev/null | awk '{print $NF}' | grep -qx "$SESSION"; then
         pane_gone=1
       fi
-    elif command -v tmux >/dev/null 2>&1; then
-      if ! tmux list-windows -a -F '#{session_name}:#{window_name}' 2>/dev/null | grep -qx "$SESSION"; then
-        pane_gone=1
-      fi
     else
-      # No backend — treat as "gone" so a missing daemon does not block the
-      # self-heal; fm-teardown already killed whatever it owned.
+      # No mintmux daemon — treat as "gone" so a missing daemon does not block
+      # the self-heal; fm-teardown already killed whatever it owned.
       pane_gone=1
     fi
 

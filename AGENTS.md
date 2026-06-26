@@ -163,16 +163,16 @@ Adjust other sections only when the task genuinely deviates from the standard sh
 **Enforcement**: Run `.agents/skills/fm-pattern-enforce` at every pre-spawn check. The `bin/fm-pattern-check.sh` script validates the contractor fields in every brief. Fix warnings before spawning unless the gap is intentional.
 
 **Tool hierarchy** (from `~/.agent-rules/TOOL_REGISTRY.md`): Before raw shell commands, use in order:
-1. `coco-axi` — first call on any unfamiliar task (searches unified DB: 525k transcripts, 31k code chunks, 33k ledgers)
-2. `llm-tldr` — code structure/arch/calls/search
-3. `memjuice` — session history recall/reason/resume
-4. `gh-axi` — all GitHub-facing work
-5. File ops (`rg`, `fd`, `eza`, `bat`) — never `cd`+`cat`+`ls`+`find`
+1. `llm-tldr` — code structure/arch/calls/search; first call on any code task
+2. File ops (`rg`, `fd`, `eza`, `bat`) — never `cd`+`cat`+`ls`+`find`
+3. `gh-axi` — all GitHub-facing work
+4. `githits-axi` — public code examples, package docs
+5. `context7-axi` — external library docs
 6. `gh` — only when gh-axi doesn't cover it
 
 ## 12. Queue architecture [tags: architecture, queue, fm-queue]
 
-`data/backlog.md` is **auto-derived**, not hand-edited. The durable source of truth is the SQLite database at `data/tasks.db` (binary: `fm-tasks` from `~/projects/orbit/cmd/fm-tasks/`), with `state/queue.json` as the parallel planning layer.
+`data/backlog.md` is **auto-derived**, not hand-edited. The durable source of truth is the SQLite database at `data/tasks.db` (binary: `fm-tasks` from `~/projects/LIVE/firstmate/cmd/fm-tasks/`), with `state/queue.json` as the parallel planning layer.
 
 - `bin/fm-queue.sh to-markdown` (alias: `--once`) reads `data/tasks.db` + `state/queue.json` and writes `data/backlog.md` atomically. Called by `bin/fm-watch.sh` on every status signal, by `bin/fm-bootstrap.sh` at session start, and by `bin/fm-session-start.sh` for the SessionStart hook. The script is idempotent: a rerun with no state change is a noop against the on-disk file.
 - `bin/fm-queue.sh --mark-done <id>` self-heals the "teardown succeeded but `fm-tasks done` failed" case. Reads `state/<id>.meta` + `state/<id>.status` + the pane list; only fires `fm-tasks done`/`fail` when all three signals agree (worktree back in pool, pane gone, status ends in `done:`/`failed:`).

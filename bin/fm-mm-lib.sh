@@ -10,7 +10,7 @@
 #   FM_MM_CTL       path to mm-ctl binary   (default: <bindir>/mm-ctl)
 #   FM_MM_SOCK      unix socket path        (default: $TMPDIR/mintmux.sock or /tmp/mintmux.sock)
 #   FM_MM_LOG       mintmux log file        (default: /tmp/mintmux.log)
-#   FM_MM_FALLBACK_TMUX=1   force tmux fallback even when mintmux is available
+#   FM_MM_FALLBACK_TMUX=1   (deprecated) was: force tmux fallback; now ignored by fm-spawn
 #
 # Compatibility: every helper falls back to tmux when mintmux is unavailable
 # (binary missing, socket not present, FM_MM_FALLBACK_TMUX=1). This keeps
@@ -65,8 +65,19 @@ mm_sock() {
   if [ -n "${FM_MM_SOCK:-}" ]; then
     printf '%s\n' "$FM_MM_SOCK"; return 0
   fi
-  local t="${TMPDIR:-/tmp}"
-  printf '%s\n' "$t/mintmux.sock"
+  # Stable path matches proto.go DefaultSock: /tmp/mintmux-<uid>.sock
+  # TMPDIR is intentionally ignored — it's a per-boot random dir on macOS.
+  printf '/tmp/mintmux-%s.sock\n' "$(id -u)"
+}
+
+# meta_get <id> <field> — read one field from state/<id>.meta.
+# Concentrates all meta reads behind a single seam: a format change is 1 line.
+# Returns empty string if the field is absent; exits 0 either way.
+meta_get() {
+  local id="$1" field="$2"
+  local meta="${FM_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/.." && pwd)}/state/${id}.meta"
+  if [ ! -f "$meta" ]; then return 0; fi
+  grep "^${field}=" "$meta" | head -1 | cut -d= -f2-
 }
 
 mm_log() {
@@ -122,10 +133,7 @@ mm_ensure_daemon() {
   # already up, so this function — whose whole job is to START the daemon —
   # could never reach its own start path and always fell through to tmux.
   if [ -z "$bin" ] || [ -z "$ctl" ]; then
-    if command -v tmux >/dev/null 2>&1; then
-      printf '%s\n' "tmux"; return 0
-    fi
-    echo "error: neither mintmux nor tmux is available; install one (see bin/fm-bootstrap.sh)" >&2
+    echo "error: mintmux binary not found; install mintmux (see bin/fm-bootstrap.sh). tmux backend is deprecated." >&2
     return 1
   fi
 
@@ -160,14 +168,7 @@ mm_ensure_daemon() {
     fi
     sleep 0.1
   done
-  # Daemon would not come up. Don't hard-fail the spawn — fall back to tmux so
-  # crewmates can still launch, and leave a breadcrumb to the log.
-  if command -v tmux >/dev/null 2>&1; then
-    echo "warning: mintmux daemon failed to start (see $log); falling back to tmux" >&2
-    printf '%s\n' "tmux"
-    return 0
-  fi
-  echo "error: mintmux daemon failed to start and tmux unavailable; see $log" >&2
+  echo "error: mintmux daemon failed to start; see $log. tmux backend is deprecated — fix mintmux." >&2
   return 1
 }
 

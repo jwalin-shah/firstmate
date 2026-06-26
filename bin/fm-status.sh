@@ -20,27 +20,20 @@ set -euo pipefail
 have_fm_tasks=0
 command -v fm-tasks >/dev/null 2>&1 && have_fm_tasks=1
 
-# Backend detection: mm-ctl + socket, or tmux, or nothing.
+# Backend detection: mm-ctl + stable socket path.
+_mm_sock="/tmp/mintmux-$(id -u).sock"
 watcher_backend=none
-if command -v mm-ctl >/dev/null 2>&1 && [ -S "${TMPDIR:-/tmp}/mintmux.sock" ] \
-   && mm-ctl ping -sock="${TMPDIR:-/tmp}/mintmux.sock" >/dev/null 2>&1; then
+if command -v mm-ctl >/dev/null 2>&1 && [ -S "$_mm_sock" ] \
+   && mm-ctl ping -sock="$_mm_sock" >/dev/null 2>&1; then
   watcher_backend=mintmux
-elif command -v tmux >/dev/null 2>&1; then
-  watcher_backend=tmux
 fi
 
 # Count of live crewmate panes (sessions prefixed fm-).
 live_panes=0
-case "$watcher_backend" in
-  mintmux)
-    live_panes=$(mm-ctl list-panes -sock="${TMPDIR:-/tmp}/mintmux.sock" 2>/dev/null \
-                 | awk '{print $NF}' | grep -c '^fm-' || true)
-    ;;
-  tmux)
-    live_panes=$(tmux list-windows -a -F '#{session_name}:#{window_name}' 2>/dev/null \
-                 | grep -c ':fm-' || true)
-    ;;
-esac
+if [ "$watcher_backend" = mintmux ]; then
+  live_panes=$(mm-ctl list-panes -sock="$_mm_sock" 2>/dev/null \
+               | awk '{print $NF}' | grep -c '^fm-' || true)
+fi
 
 # Watcher liveness: how stale is .last-watcher-beat?
 watcher_age=-1

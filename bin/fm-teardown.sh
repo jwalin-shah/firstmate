@@ -20,19 +20,19 @@ FORCE=${2:-}
 
 META="$STATE/$ID.meta"
 [ -f "$META" ] || die "$ID: meta not found"
-WT=$(grep '^worktree=' "$META" | cut -d= -f2-)
-T=$(grep '^window=' "$META" | cut -d= -f2-)
-PROJ=$(grep '^project=' "$META" | cut -d= -f2-)
+WT=$(meta_get "$ID" worktree)
+T=$(meta_get "$ID" window)
+PROJ=$(meta_get "$ID" project)
 # backend= and pane=/session= are recorded by fm-spawn when running under mintmux.
 # pane= is kept in meta for downstream consumers (fm-peek, fm-send) and shell tooling
 # that may want to inspect the live pane id; teardown only needs session= to kill.
-BACKEND=$(grep '^backend=' "$META" | cut -d= -f2- || true)
+BACKEND=$(meta_get "$ID" backend)
 [ -n "$BACKEND" ] || BACKEND=tmux
-SESS=$(grep '^session=' "$META" | cut -d= -f2- || true)
+SESS=$(meta_get "$ID" session)
 
-KIND=$(grep '^kind=' "$META" | cut -d= -f2- || true)
+KIND=$(meta_get "$ID" kind)
 [ -n "$KIND" ] || KIND=ship
-MODE=$(grep '^mode=' "$META" | cut -d= -f2- || true)
+MODE=$(meta_get "$ID" mode)
 [ -n "$MODE" ] || MODE=no-mistakes
 
 default_branch() {
@@ -104,10 +104,8 @@ if [ -d "$WT" ]; then
   ( cd "$PROJ" && treehouse return --force "$WT" )
 fi
 
-tmux kill-window -t "$T" 2>/dev/null || true
-# Mintmux teardown: kill the session we recorded. Tolerates a session that is
-# already gone (e.g. teardown was re-run after a successful prior teardown).
-if [ "$BACKEND" = mintmux ] && [ -n "$SESS" ]; then
+# Teardown the mintmux session. Tolerates a session already gone (re-run case).
+if [ -n "$SESS" ]; then
   mm_kill_session "$SESS" 2>/dev/null || true
 fi
 rm -f "$STATE/$ID.status" "$STATE/$ID.turn-ended" "$STATE/$ID.check.sh" "$STATE/$ID.meta" "$STATE/$ID.pi-ext.ts"
