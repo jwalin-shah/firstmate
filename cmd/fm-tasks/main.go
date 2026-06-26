@@ -8,7 +8,7 @@
 //
 // Replaces data/backlog.md. Persists tasks in a SQLite WAL database at
 // data/tasks.db with a strict schema. Subcommands: ls, get, add, start, done,
-// fail, unblock, unblocked-by, meta, migrate.
+// fail, unblock, unblocked-by, next, why, meta, migrate.
 //
 // Error contract:
 //   - all errors on stdout: "error: ..." + "help: ..."
@@ -1073,7 +1073,7 @@ func cmdWhy(db *sql.DB, args []string) {
 func main() {
 	if len(os.Args) < 2 {
 		fmt.Fprintln(os.Stdout, "usage: fm-tasks <subcommand> [args]")
-		fmt.Fprintln(os.Stdout, "subcommands: ls, get, add, start, done, fail, unblock, unblocked-by, next, why, meta, migrate")
+		fmt.Fprintln(os.Stdout, "subcommands: ls, get, add, start, done, fail, unblock, unblocked-by, next, why, meta, migrate, tui")
 		os.Exit(2)
 	}
 	sub := os.Args[1]
@@ -1107,6 +1107,8 @@ func main() {
 		cmdMeta(db, rest)
 	case "migrate":
 		cmdMigrate(db, rest)
+	case "tui":
+		cmdTUI(db)
 	default:
 		fmt.Fprintf(os.Stdout, "usage: fm-tasks <subcommand> [args]\n")
 		fmt.Fprintf(os.Stdout, "error: unknown subcommand %q\n", sub)
