@@ -269,54 +269,21 @@ sys.stdout.write("\n".join(out))
     ;;
 
   --mark-done)
-    # Self-heal: when a teardown succeeded but the fm-tasks done/fail call
-    # failed (e.g. the pane had already been killed, the meta file was
-    # missing, or a panic cut the call short), this subcommand finishes the
-    # bookkeeping. Three signals must all be true to mark done:
-    #   1. state/<id>.meta either does not exist, or has worktree=missing
-    #      (meaning treehouse has returned the worktree to the pool).
-    #   2. The mintmux/tmux pane for fm-<id> is gone (mm-ctl list-panes
-    #      returns nothing for the session, or tmux has no such window).
-    #   3. state/<id>.status exists and its last line begins with `done:` or
-    #      `failed:`.
-    # When all three hold, we route through `fm-tasks done` or
-    # `fm-tasks fail` so the binary's CHECK constraints and timestamps stay
-    # consistent (we never write to the SQLite DB directly).
+    # Self-heal: finishes fm-tasks bookkeeping when teardown succeeded but
+    # the fm-tasks done/fail call at the end of fm-teardown.sh was cut short.
+    # fm-tasks is the single write authority for task status — we never
+    # write to tasks.db directly. The only signal we need: the status file
+    # ends with done: or failed:. Worktree and pane checks were removed
+    # (Candidate 3) because teardown already verifies both before it runs;
+    # re-checking them here just causes spurious refusals when the daemon
+    # is temporarily down or the meta file was already cleaned up.
     ID=${1:?fm-queue.sh --mark-done: <id> required}
     if ! command -v fm-tasks >/dev/null 2>&1; then
       echo "fm-queue.sh --mark-done: fm-tasks binary not on PATH" >&2
       exit 1
     fi
-    META="$STATE/$ID.meta"
     STATUS_FILE="$STATE/$ID.status"
-    SESSION="fm-$ID"
 
-    # Signal 1: worktree back in pool.
-    worktree_ok=0
-    if [ ! -f "$META" ]; then
-      worktree_ok=1
-    else
-      worktree_line=$(meta_get "$ID" worktree)
-      if [ -z "$worktree_line" ] || [ "$worktree_line" = "missing" ]; then
-        worktree_ok=1
-      fi
-    fi
-
-    # Signal 2: pane gone. Probe mintmux only (tmux backend deprecated).
-    pane_gone=0
-    ctl=$(command -v mm-ctl 2>/dev/null || true)
-    sock="/tmp/mintmux-$(id -u).sock"
-    if [ -n "$ctl" ] && [ -S "$sock" ]; then
-      if ! "$ctl" list-panes -sock="$sock" 2>/dev/null | awk '{print $NF}' | grep -qx "$SESSION"; then
-        pane_gone=1
-      fi
-    else
-      # No mintmux daemon — treat as "gone" so a missing daemon does not block
-      # the self-heal; fm-teardown already killed whatever it owned.
-      pane_gone=1
-    fi
-
-    # Signal 3: status file ends with done: or failed:.
     status_done=0
     status_failed=0
     if [ -f "$STATUS_FILE" ]; then
@@ -327,11 +294,6 @@ sys.stdout.write("\n".join(out))
       esac
     fi
 
-    if [ "$worktree_ok" -ne 1 ] || [ "$pane_gone" -ne 1 ]; then
-      printf 'fm-queue.sh --mark-done %s: refusing (worktree_ok=%s pane_gone=%s status_done=%s status_failed=%s)\n' \
-        "$ID" "$worktree_ok" "$pane_gone" "$status_done" "$status_failed" >&2
-      exit 1
-    fi
     if [ "$status_done" -ne 1 ] && [ "$status_failed" -ne 1 ]; then
       printf 'fm-queue.sh --mark-done %s: refusing (no done:/failed: in %s)\n' "$ID" "$STATUS_FILE" >&2
       exit 1

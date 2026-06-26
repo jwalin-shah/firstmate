@@ -8,13 +8,10 @@
 # Configuration (all optional):
 #   FM_MM_BIN       path to mintmux binary (default: PATH lookup; ~/bin/mintmux wins)
 #   FM_MM_CTL       path to mm-ctl binary   (default: <bindir>/mm-ctl)
-#   FM_MM_SOCK      unix socket path        (default: $TMPDIR/mintmux.sock or /tmp/mintmux.sock)
+#   FM_MM_SOCK      unix socket path        (default: /tmp/mintmux-<uid>.sock)
 #   FM_MM_LOG       mintmux log file        (default: /tmp/mintmux.log)
-#   FM_MM_FALLBACK_TMUX=1   (deprecated) was: force tmux fallback; now ignored by fm-spawn
 #
-# Compatibility: every helper falls back to tmux when mintmux is unavailable
-# (binary missing, socket not present, FM_MM_FALLBACK_TMUX=1). This keeps
-# existing firstmate workflows intact during the transition.
+# tmux backend is deprecated. mintmux is required. FM_MM_FALLBACK_TMUX is ignored.
 set -u
 
 FM_MM_DEFAULT_BIN_DIR="${FM_MM_DEFAULT_BIN_DIR:-/Users/jwalinshah/bin}"
