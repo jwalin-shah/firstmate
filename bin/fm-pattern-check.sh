@@ -55,10 +55,10 @@ if [ "$KIND" = "scout" ]; then
   check "Report path" "data/$ID/report.md" "Scout tasks need an Output artifact pointing to report.md"
 fi
 
-# Tool hierarchy check — brief should mention coco-axi for research-heavy tasks
+# Tool hierarchy check — brief should mention llm-tldr for research-heavy tasks
 if grep -qi 'investigat\|find out\|audit\|search\|look into\|research' "$BRIEF" 2>/dev/null; then
-  if ! grep -qi 'coco-axi\|cocoindex\|llm-tldr\|memjuice' "$BRIEF" 2>/dev/null; then
-    WARNINGS="$WARNINGS  - SUGGEST: Add coco-axi or llm-tldr to Context/Inputs — first tool for research tasks\n"
+  if ! grep -qi 'llm-tldr\|githits-axi' "$BRIEF" 2>/dev/null; then
+    WARNINGS="$WARNINGS  - SUGGEST: Add llm-tldr or githits-axi to Context/Inputs — first tool for research tasks\n"
   fi
 fi
 
