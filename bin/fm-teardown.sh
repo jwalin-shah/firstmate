@@ -10,6 +10,15 @@
 # Usage: fm-teardown.sh <task-id> [--force]
 #   --force skips the unpushed-work check. Only use it when the captain has
 #   explicitly said to discard the work.
+#
+# fm-tasks integration: before clearing the meta/status files, transition the
+# SQLite AXI task store row for this task. The store mirrors what the markdown
+# backlog tracks (queued/inflight/done/failed), so we either `done` (for ship
+# tasks whose work landed locally or as a PR) or `fail` (for everything else).
+# The call is non-fatal - missing/broken fm-tasks does not block teardown, the
+# backlog.md mirror remains canonical for that run. Subcommands:
+#   fm-tasks done   <id> --pr <url>|--local
+#   fm-tasks fail   <id>
 set -euo pipefail
 [ -n "${FM_ROOT:-}" ] || FM_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 . "$FM_ROOT/bin/fm-init.sh"
@@ -109,6 +118,27 @@ if [ -n "$SESS" ]; then
   mm_kill_session "$SESS" 2>/dev/null || true
 fi
 rm -f "$STATE/$ID.status" "$STATE/$ID.turn-ended" "$STATE/$ID.check.sh" "$STATE/$ID.meta" "$STATE/$ID.pi-ext.ts"
+
+# Best-effort: finalize the SQLite task store row. For ship tasks whose work landed
+# locally (no PR) we mark done --local; PR-based ships are recorded with --pr when
+# fm-pr-check populated state/$ID.meta pr=, otherwise we fall through to fail so the
+# row does not stay inflight. Scout and any other teardown without a clean ship path
+# also goes to fail. Errors are swallowed - a missing/broken fm-tasks never blocks
+# teardown, the markdown backlog stays canonical for that run.
+if [ "$KIND" = scout ]; then
+  fm-tasks fail "$ID" >/dev/null 2>&1 || true
+else
+  PR=$(grep '^pr=' "$STATE/$ID.meta" 2>/dev/null | cut -d= -f2- || true)
+  if [ -n "$PR" ]; then
+    fm-tasks done "$ID" --pr "$PR" >/dev/null 2>&1 || true
+  elif [ "$MODE" = local-only ]; then
+    fm-tasks done "$ID" --local >/dev/null 2>&1 || true
+  else
+    fm-tasks fail "$ID" >/dev/null 2>&1 || true
+  fi
+fi
+# pr= was read from meta; meta is gone after the rm above, so clean up the temp var.
+unset PR
 if [ "$KIND" != scout ] && [ "$MODE" != local-only ]; then
   "$FM_ROOT/bin/fm-fleet-sync.sh" "$PROJ" || true
 fi
