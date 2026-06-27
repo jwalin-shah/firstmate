@@ -48,7 +48,7 @@ state/               volatile runtime signals; gitignored
 .no-mistakes/        local validation state and evidence; gitignored
 ```
 
-Task ids are short kebab slugs with a random suffix (e.g. `fix-login-k3`); the mintmux session is always `fm-<id>`.
+Task ids are short kebab slugs with a random suffix (e.g. `fix-login-k3`); the tmux window is always `fm-<id>`.
 
 ## 3. Bootstrap (run at every session start)
 
@@ -74,7 +74,7 @@ Run `/fm-harness-adapters` for busy signatures, exit commands, and quirks.
 
 ## 5. Recovery (run at every session start, after bootstrap)
 
-You may have been restarted mid-flight. Reconcile before doing anything else: (1) `bin/fm-lock.sh` (if refused, another live session holds it — operate read-only); (2) `bin/fm-wake-drain.sh` (keep printed records as this turn's first queue); (3) `mm-ctl list-panes 2>/dev/null | grep 'fm-'` for live crewmates; (4) read `data/backlog.md`, every `state/*.meta`, every `state/*.status`; (5) orphan panes (no meta): peek, figure out, ask if unclear; (6) dead crewmates (meta, no pane): `treehouse status`, salvage or report; (7) surface only what needs the captain — say nothing if nothing does; (8) handle drained wakes, then arm the watcher (section 8). All truth lives in mintmux panes, state files, data/backlog.md, and treehouse; conversation memory is a cache.
+You may have been restarted mid-flight. Reconcile before doing anything else: (1) `bin/fm-lock.sh` (if refused, another live session holds it — operate read-only); (2) `bin/fm-wake-drain.sh` (keep printed records as this turn's first queue); (3) `tmux list-windows -a -F '#{session_name}:#{window_name}' | grep ':fm-'` for live crewmates; (4) read `data/backlog.md`, every `state/*.meta`, every `state/*.status`; (5) orphan windows (no meta): peek, figure out, ask if unclear; (6) dead crewmates (meta, no window): `treehouse status`, salvage or report; (7) surface only what needs the captain — say nothing if nothing does; (8) handle drained wakes, then arm the watcher (section 8). All truth lives in tmux, state files, data/backlog.md, and treehouse; conversation memory is a cache.
 
 ## 6. Project management
 
@@ -133,93 +133,4 @@ Scaffold with `bin/fm-brief.sh <id> <repo-name>` (add `--scout` for scout tasks)
 
 Status reporting is sparse: crewmates append only for supervisor-actionable phase changes or `needs-decision`/`blocked`/`done`/`failed`, because every append wakes firstmate.
 
-Fill in the Contractor fields in the `# Task` section (see `data/patterns/contractor.md`):
-
-| Field | What goes here |
-|---|---|
-| **Goal** | One sentence: what to achieve, not how |
-| **Context** | Why this matters; link to the scout report, issue, or session that motivated it |
-| **Inputs** | Specific files, PRs, tickets, or `data/<id>/report.md` to start from |
-| **Output artifact** | The exact PR URL or file path to produce |
-| **Acceptance check** | Verifiable criteria — the crewmate knows what done looks like before starting |
-| **Constraints** | What not to touch; delivery mode override if any |
-
-The acceptance check is the most important field — without it, crewmates declare done prematurely. Never write a vague task block. If the goal isn't clear enough to write an acceptance check, make it a Scout task first (see `data/patterns/routing.md`).
-
-Adjust other sections only when the task genuinely deviates from the standard ship-a-new-PR shape (e.g. fixing an existing external PR); the scaffold is the contract, not a suggestion.
-
-### Agentic design patterns
-
-`data/patterns/` holds five pattern cards (from "Agentic Design Patterns", Gulli 2025). Reference before dispatching non-trivial tasks:
-
-| Card | When to read |
-|---|---|
-| `contractor.md` | Always — the 7-field contract template |
-| `routing.md` | Before classifying a task as scout vs ship vs parallel |
-| `parallelization.md` | When the captain says "across all repos" or "for each project" |
-| `reflection.md` | Before presenting high-stakes output to the captain; for any non-trivial ship task |
-| `memory.md` | When deciding where to persist a learning (AGENTS.md vs captain.md vs learn-log) |
-
-**Enforcement**: Run `.agents/skills/fm-pattern-enforce` at every pre-spawn check. The `bin/fm-pattern-check.sh` script validates the contractor fields in every brief. Fix warnings before spawning unless the gap is intentional.
-
-**Tool hierarchy** (from `~/.agent-rules/TOOL_REGISTRY.md`): Before raw shell commands, use in order:
-1. `llm-tldr` — code structure/arch/calls/search; first call on any code task
-2. File ops (`rg`, `fd`, `eza`, `bat`) — never `cd`+`cat`+`ls`+`find`
-3. `gh-axi` — all GitHub-facing work
-4. `githits-axi` — public code examples, package docs
-5. `context7-axi` — external library docs
-6. `gh` — only when gh-axi doesn't cover it
-
-## 12. Queue architecture [tags: architecture, queue, fm-queue]
-
-`data/backlog.md` is **auto-derived**, not hand-edited. The durable source of truth is the SQLite database at `data/tasks.db` (binary: `fm-tasks` from `~/projects/LIVE/firstmate/cmd/fm-tasks/`), with `state/queue.json` as the parallel planning layer.
-
-- `bin/fm-queue.sh to-markdown` (alias: `--once`) reads `data/tasks.db` + `state/queue.json` and writes `data/backlog.md` atomically. Called by `bin/fm-watch.sh` on every status signal, by `bin/fm-bootstrap.sh` at session start, and by `bin/fm-session-start.sh` for the SessionStart hook. The script is idempotent: a rerun with no state change is a noop against the on-disk file.
-- `bin/fm-queue.sh --mark-done <id>` self-heals the "teardown succeeded but `fm-tasks done` failed" case. Reads `state/<id>.meta` + `state/<id>.status` + the pane list; only fires `fm-tasks done`/`fail` when all three signals agree (worktree back in pool, pane gone, status ends in `done:`/`failed:`).
-- `bin/fm-status.sh` reads the same sources and prints a TUI-free human report: services, in-flight, queue head, recent done, watcher liveness. No `mm-ctl capture` output. Wired into `bin/fm-session-start.sh`, which the captain's `~/.claude/settings.json` SessionStart hook calls.
-- The status set in SQLite is `inflight` (one word); the status set in `state/queue.json` is `in-flight` (hyphenated). `bin/fm-queue.sh to-markdown` normalizes both into the markdown `## In flight` heading. Don't write a third status convention.
-- Do not hand-edit `data/backlog.md`. If a section is wrong, fix the source (tasks.db or queue.json) and rerun `bin/fm-queue.sh to-markdown`.
-
-## Project AGENTS.md Schema
-
-Every project `AGENTS.md` may use tagged sections to drive relevance-gated brief injection. Tags are advisory — the schema is a recommendation, not a hard contract; crewmates add new sections as they learn.
-
-### Section format
-
-Each top-level `## <Title>` section may include a single tag line right under the heading:
-
-```markdown
-## Build & Test [tags: build, test]
-
-run `make build` then `make test`. Failures in either block the PR.
-
-## Architecture [tags: architecture, overview]
-
-Single-process Lua runtime with channel-based IPC to the renderer.
-
-## Known Quirks [tags: audio, codec]
-
-The audio thread cannot allocate; we keep a fixed-size ring buffer.
-
-## Patterns [tags: lua, error-handling]
-
-Always `pcall` user callbacks — they can throw.
-```
-
-The tag line is `[tags: <comma-separated list>]` placed immediately after the `##` heading, on the same line or the next line. Empty tag list (`[tags: ]`) means "no filter; never auto-inject".
-
-### How `bin/fm-brief.sh` uses tags
-
-1. Extract keywords from the task description: file extensions (`.go`, `.swift`, `.lua`, `.zig`, `.py`), subsystem names, and verbs.
-2. For each top-level section in the project's `AGENTS.md`, parse its tag line.
-3. Inject the section only when at least one tag intersects the keyword set. Tag matching is plain keyword intersection — no semantic similarity, no embeddings.
-4. Tag-free sections are never auto-injected; the brief stays tight. Crewmates can always read the full file via skills.
-5. For each file extension touched by the task, also inject the matching language cache entry from `~/.agent-rules/lang-cache/<lang>.md` (populated on first use by `bin/fm-lang-cache.sh`).
-
-### Recommended tag vocabulary
-
-Prefer stable, reusable tags over one-offs. Common stems: `build`, `test`, `arch`, `overview`, `lua`, `go`, `swift`, `zig`, `python`, `audio`, `video`, `channel`, `socket`, `parse`, `render`, `cli`, `db`, `concurrency`, `wasi`, `wasm`, `hot-path`. Subsystem tags get a project-specific prefix when they collide (`mintmux-channel`, `orbit-router`).
-
-### Language cache
-
-`~/.agent-rules/lang-cache/<lang>.md` holds one canonical example per language, populated lazily by `bin/fm-lang-cache.sh <lang>` via a single `githits-axi example "<canonical pattern> <language>"` call. The cache never refreshes automatically; delete a file to force re-population. Supported langs today: `go`, `swift`, `zig`, `lua`, `python`.
+Then replace the `{TASK}` placeholder with a clear task description, acceptance criteria, and any constraints or context. Adjust other sections only when the task genuinely deviates from the standard ship-a-new-PR shape (e.g. fixing an existing external PR); the scaffold is the contract, not a suggestion.
