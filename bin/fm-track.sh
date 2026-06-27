@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
-# fm-todos — Session-level todo list that firstmate MUST interact with.
+# fm-track — Session-level todo list that firstmate MUST interact with.
 # This is the session contract: firstmate calls start/done/current to
 # track what it's working on. The pre-spawn gate checks this before
 # allowing any crewmate dispatch.
 #
 # Usage:
-#   fm-todos list                    — show all items
-#   fm-todos start <item>            — mark item as in-progress (only one active)
-#   fm-todos done <item>             — mark item complete
-#   fm-todos current                 — show current active item
-#   fm-todos add <description>       — add a new item
-#   fm-todos reset                   — clear all items (new session)
+#   fm-track list                    — show all items
+#   fm-track start <item>            — mark item as in-progress (only one active)
+#   fm-track done <item>             — mark item complete
+#   fm-track current                 — show current active item
+#   fm-track add <description>       — add a new item
+#   fm-track reset                   — clear all items (new session)
 #
 # State: state/session-todos.json (atomically written)
 # Source: derived from state/session-agenda.md
@@ -65,7 +65,7 @@ print()
 if active:
     print(f'Active: {active}')
 else:
-    print('No active item — set one with: fm-todos start <number>')
+    print('No active item — set one with: fm-track start <number>')
 "
     ;;
 
@@ -85,7 +85,7 @@ else:
   start)
     ITEM="${2:-}"
     if [ -z "$ITEM" ]; then
-      echo "usage: fm-todos start <item-description-or-number>"
+      echo "usage: fm-track start <item-description-or-number>"
       exit 1
     fi
     TODO_ITEM="$ITEM" python3 -c "
@@ -124,7 +124,7 @@ json.dump(d, sys.stdout, indent=2)
   done)
     ITEM="${2:-}"
     if [ -z "$ITEM" ]; then
-      echo "usage: fm-todos done <item-description-or-number>"
+      echo "usage: fm-track done <item-description-or-number>"
       exit 1
     fi
     TODO_ITEM="$ITEM" python3 -c "
@@ -157,7 +157,7 @@ json.dump(d, sys.stdout, indent=2)
   add)
     DESC="${2:-}"
     if [ -z "$DESC" ]; then
-      echo "usage: fm-todos add <description>"
+      echo "usage: fm-track add <description>"
       exit 1
     fi
     TODO_DESC="$DESC" python3 -c "
@@ -189,13 +189,13 @@ if active:
     print(f'TODO active: {active}')
     sys.exit(0)
 else:
-    print('NO ACTIVE TODO — set one with: fm-todos start <item>')
+    print('NO ACTIVE TODO — set one with: fm-track start <item>')
     sys.exit(1)
 "
     ;;
 
   *)
-    echo "usage: fm-todos <list|start|done|current|add|reset>"
+    echo "usage: fm-track <list|start|done|current|add|reset>"
     exit 1
     ;;
 esac
