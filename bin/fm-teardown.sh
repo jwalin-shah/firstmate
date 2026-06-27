@@ -201,6 +201,7 @@ else
   } >> "$LEARN_LOG"
   printf '%s\n' "📚 Learn: appended task outcome to data/learn-log.md"
 fi
+python3 "$FM_ROOT/bin/fm-learn-log-import.py" >/dev/null 2>&1 || true
 
 # Axiom extraction: mine engineering axioms from task outcome
 "$FM_ROOT/bin/fm-axiom-ingest.sh" "$ID"
