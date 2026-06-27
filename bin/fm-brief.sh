@@ -28,6 +28,47 @@
 set -euo pipefail
 [ -n "${FM_ROOT:-}" ] || FM_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 . "$FM_ROOT/bin/fm-init.sh"
+
+# Inject last 3 learn-log entries for this repo into the brief's Context section.
+# Non-fatal: missing file or no matches = no-op.
+inject_learn_log() {
+  local log="$FM_ROOT/data/learn-log.md"
+  [ -f "$log" ] || return 0
+  local matches
+  matches=$(awk -v repo="$REPO" '
+    BEGIN { RS="\n---\n"; FS="\n"; n=0 }
+    {
+      found = 0
+      for (i = 1; i <= NF; i++)
+        if ($i ~ "^project: .*/projects/" repo "$") { found = 1; break }
+      if (!found) next
+      n++; e = ""
+      for (i = 1; i <= NF; i++) {
+        if ($i ~ /^## /) e = $i
+        if ($i ~ /^report-summary: #?/) e = e "\n" $i
+      }
+      entries[n] = e
+    }
+    END {
+      if (!n) exit 1
+      s = (n > 3) ? n - 2 : 1
+      for (i = s; i <= n; i++) {
+        print entries[i]
+        if (i < n) print "---"
+      }
+    }
+  ' "$log") || true
+  [ -z "$matches" ] && return 0
+  matches="$matches" perl -i -pe '
+    if (/^Context:/ && !$inj) {
+      $e = $ENV{"matches"};
+      $e =~ s/^## /### /gm;
+      $e =~ s/^report-summary: #?/> report: /gm;
+      $_ .= "\n> **Past learnings from similar tasks:**\n$e\n";
+      $inj = 1
+    }
+  ' "$BRIEF"
+}
 KIND=ship
 INJECT=0
 TASK_FILE=""
@@ -84,6 +125,7 @@ You are a crewmate: an autonomous worker agent managed by firstmate. Work on you
 <!-- Contractor contract — replace each field; skip fields that don't apply -->
 Goal: {what to find or answer, one sentence}
 Context: {why this matters; link to prior session, issue, or report that motivated this}
+$("$FM_ROOT/bin/fm-context-load.sh" "$REPO" 3 | sed 's/^/> /' | head -10 || true)
 Inputs: {specific files, PRs, or data/<id>/report.md to start from}
 Output artifact: $FM_ROOT/data/$ID/report.md
 Acceptance check: {what a complete, useful report contains — list the required sections}
@@ -117,6 +159,7 @@ The report must stand alone: what you did, what you found, the evidence (command
 When the report is complete, append \`done: {one-line conclusion}\` to the status file and stop.
 If your findings reveal work that should ship (e.g. you reproduced a bug and the fix is clear), say so in the report; firstmate may promote this task in place, and you would then receive mode-specific ship instructions as a follow-up message.
 EOF
+inject_learn_log
 echo "scaffolded: $BRIEF (scout; fill in Contractor fields: Goal/Context/Inputs/Acceptance check)"
 exit 0
 fi
@@ -177,6 +220,7 @@ You are a crewmate: an autonomous worker agent managed by firstmate. Work on you
 <!-- Contractor contract — replace each field; skip fields that don't apply -->
 Goal: {what to implement or fix, one sentence}
 Context: {why this matters; link to scout report, issue, or session that motivated this}
+$("$FM_ROOT/bin/fm-context-load.sh" "$REPO" 3 | sed 's/^/> /' | head -10 || true)
 Inputs: {specific files, PRs, tickets, or data/<id>/report.md to start from}
 Output artifact: PR at https://github.com/... (or branch fm/$ID for local-only)
 Acceptance check: {verifiable criteria — tests pass, PR open with CI green, etc.}
@@ -208,4 +252,5 @@ Keep it proportionate: skip \`AGENTS.md\` edits for trivial tasks that produced 
 
 $DOD
 EOF
+inject_learn_log
 echo "scaffolded: $BRIEF (ship, mode=$MODE; fill in Contractor fields: Goal/Context/Inputs/Artifact/Acceptance check)"

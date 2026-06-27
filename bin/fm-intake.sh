@@ -56,7 +56,15 @@ ID="${ID}-$(echo $RANDOM | md5sum | head -c 4)"
 
 MODE=$("$FM_ROOT/bin/fm-project-mode.sh" "$REPO" 2>/dev/null || echo "no-mistakes")
 
-echo "[intake] Creating task $ID (repo=$REPO, kind=$KIND, mode=$MODE)"
+# Run the router to classify this task and suggest a harness
+ROUTER_OUT=$(echo "$DESC" | "$FM_ROOT/bin/fm-router.sh" "$REPO" "$TITLE" 2>/dev/null || echo '{"harness":"opencode","task_type":"code-change","complexity":"simple"}')
+SUGGESTED_HARNESS=$(echo "$ROUTER_OUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('harness','opencode'))" 2>/dev/null || echo "opencode")
+TASK_TYPE=$(echo "$ROUTER_OUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('task_type','code-change'))" 2>/dev/null || echo "code-change")
+COMPLEXITY=$(echo "$ROUTER_OUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('complexity','simple'))" 2>/dev/null || echo "simple")
+
+echo "[router] $TASK_TYPE ($COMPLEXITY) → $SUGGESTED_HARNESS"
+
+echo "[intake] Creating task $ID (repo=$REPO, kind=$KIND, mode=$MODE, harness=$SUGGESTED_HARNESS)"
 
 # Register with fm-tasks first
 if command -v fm-tasks >/dev/null 2>&1; then

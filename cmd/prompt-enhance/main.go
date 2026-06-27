@@ -8,9 +8,11 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"strings"
@@ -38,8 +40,12 @@ const system = "You are a prompt structurer for an AI coding assistant on a Mac.
 	"Output ONLY the rewritten request — no intro, no explanation, no quotes."
 
 func main() {
+	ctx := context.Background()
+	ctx = traceEnter(ctx, "main")
+	defer traceExit(ctx, "main")
 	raw, err := io.ReadAll(os.Stdin)
 	if err != nil || len(raw) == 0 {
+		logWarn(ctx, "main", "no input", slog.Any("read_err", err))
 		return
 	}
 
@@ -52,11 +58,13 @@ func main() {
 
 	prompt := strings.TrimSpace(inp.Prompt)
 	if len(prompt) < minPromptLen {
+		logDebug(ctx, "main", "prompt too short", slog.Int("len", len(prompt)), slog.Int("min", minPromptLen))
 		return
 	}
 	lower := strings.ToLower(prompt)
 	for _, p := range skipPrefixes {
 		if strings.HasPrefix(lower, p) {
+			logDebug(ctx, "main", "skipped by prefix", slog.String("prefix", p))
 			return
 		}
 	}
@@ -70,10 +78,10 @@ func main() {
 		model = defaultModel
 	}
 
-	// Fast probe — skip if MLX not running.
 	probe, _ := http.NewRequest("GET", mlxURL+"/models", nil)
 	probeClient := &http.Client{Timeout: time.Duration(probeTimeoutMS) * time.Millisecond}
 	if resp, err := probeClient.Do(probe); err != nil {
+		logDebug(ctx, "main", "mlx not reachable", slog.String("url", mlxURL), slog.Any("probe_err", err))
 		return
 	} else {
 		resp.Body.Close()
@@ -81,12 +89,19 @@ func main() {
 
 	rewritten, err := rewrite(mlxURL, model, prompt)
 	if err != nil || rewritten == "" || rewritten == prompt {
+		if err != nil {
+			logWarn(ctx, "main", "rewrite failed", slog.Any("rewrite_err", err))
+		}
 		return
 	}
 	fmt.Printf("<structured_intent>\n%s\n</structured_intent>\n", rewritten)
+	logInfo(ctx, "main", "prompt rewritten", slog.Int("original_len", len(prompt)), slog.Int("rewritten_len", len(rewritten)))
 }
 
 func rewrite(mlxURL, model, prompt string) (string, error) {
+	ctx := context.Background()
+	ctx = traceEnter(ctx, "rewrite", slog.String("model", model))
+	defer traceExit(ctx, "rewrite")
 	body, _ := json.Marshal(map[string]any{
 		"model": model,
 		"messages": []map[string]string{
@@ -103,6 +118,7 @@ func rewrite(mlxURL, model, prompt string) (string, error) {
 	client := &http.Client{Timeout: rewriteTimeout}
 	resp, err := client.Do(req)
 	if err != nil {
+		logError(ctx, "rewrite", err, slog.String("url", mlxURL))
 		return "", err
 	}
 	defer resp.Body.Close()
@@ -115,10 +131,14 @@ func rewrite(mlxURL, model, prompt string) (string, error) {
 		} `json:"choices"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		logError(ctx, "rewrite", err, slog.String("stage", "decode"))
 		return "", err
 	}
 	if len(out.Choices) == 0 {
+		logWarn(ctx, "rewrite", "no choices returned")
 		return "", nil
 	}
-	return strings.TrimSpace(out.Choices[0].Message.Content), nil
+	content := strings.TrimSpace(out.Choices[0].Message.Content)
+	logInfo(ctx, "rewrite", "rewrite success", slog.Int("output_len", len(content)))
+	return content, nil
 }

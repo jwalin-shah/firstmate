@@ -17,11 +17,13 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -78,12 +80,18 @@ type Task struct {
 // exitCode: 0=ok, 1=error, 2=usage. Errors print "error: <msg>" + "help: <hint>"
 // on stdout and return non-zero.
 func dieUsage(format string, args ...any) {
+	logger.Error("dieUsage",
+		slog.String("subcmd", os.Args[1]),
+		slog.String("msg", fmt.Sprintf(format, args...)))
 	fmt.Fprintf(os.Stdout, "usage: fm-tasks %s\n", os.Args[1])
 	fmt.Fprintf(os.Stdout, "error: "+format+"\n", args...)
 	os.Exit(2)
 }
 
 func dieError(err error, help string) {
+	logger.Error("dieError",
+		slog.String("error", err.Error()),
+		slog.String("help", help))
 	fmt.Fprintf(os.Stdout, "error: %v\n", err)
 	if help != "" {
 		fmt.Fprintf(os.Stdout, "help: %s\n", help)
@@ -92,6 +100,9 @@ func dieError(err error, help string) {
 }
 
 func dieMsg(msg, help string) {
+	logger.Error("dieMsg",
+		slog.String("msg", msg),
+		slog.String("help", help))
 	fmt.Fprintf(os.Stdout, "error: %s\n", msg)
 	if help != "" {
 		fmt.Fprintf(os.Stdout, "help: %s\n", help)
@@ -102,6 +113,9 @@ func dieMsg(msg, help string) {
 // openDB opens data/tasks.db relative to the current working directory. It
 // creates the parent dir, runs the schema, and returns a ready handle.
 func openDB() *sql.DB {
+	ctx := context.Background()
+	ctx = traceEnter(ctx, "openDB")
+	defer traceExit(ctx, "openDB")
 	dbPath := filepath.Join("data", "tasks.db")
 	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
 		dieError(err, "ensure ./data/ is writable")
@@ -129,6 +143,9 @@ var allFields = []string{
 // parseFields normalizes a comma-separated field list against allFields.
 // Returns the default set if empty. Errors if a token is not a known field.
 func parseFields(spec string) ([]string, error) {
+	ctx := context.Background()
+	ctx = traceEnter(ctx, "parseFields", slog.String("spec", spec))
+	defer traceExit(ctx, "parseFields")
 	if strings.TrimSpace(spec) == "" {
 		out := make([]string, len(fieldsDefault))
 		copy(out, fieldsDefault)
@@ -146,6 +163,7 @@ func parseFields(spec string) ([]string, error) {
 			continue
 		}
 		if !known[f] {
+			logWarn(ctx, "parseFields", "unknown field", slog.String("field", f))
 			return nil, fmt.Errorf("unknown field %q (known: %s)", f, strings.Join(allFields, ","))
 		}
 		out = append(out, f)
@@ -206,6 +224,9 @@ func fieldValue(t *Task, field string) (string, bool) {
 
 // cmdLs: fm-tasks ls [--status S] [--repo R] [--fields f1,f2,...]
 func cmdLs(db *sql.DB, args []string) {
+	ctx := context.Background()
+	ctx = traceEnter(ctx, "cmdLs", slog.Any("args", args))
+	defer traceExit(ctx, "cmdLs")
 	fs := flag.NewFlagSet("ls", flag.ContinueOnError)
 	fs.SetOutput(os.Stdout)
 	status := fs.String("status", "", "filter by status (inflight|queued|done|failed)")
@@ -220,8 +241,6 @@ func cmdLs(db *sql.DB, args []string) {
 		dieError(err, "valid fields: "+strings.Join(allFields, ","))
 	}
 
-	// Build a parameterized query. We do not interpolate filter values into the
-	// SQL string.
 	q := "SELECT id,title,repo,kind,status,blocked_by,blocked_reason,pr_url,report_path,added_at,started_at,done_at,meta FROM tasks WHERE 1=1"
 	var params []any
 	if *status != "" {
@@ -259,6 +278,7 @@ func cmdLs(db *sql.DB, args []string) {
 		statusLabel = "all"
 	}
 	if len(tasks) == 0 {
+		logInfo(ctx, "cmdLs", "no tasks", slog.String("status", statusLabel))
 		fmt.Printf("tasks: 0 %s tasks\n", statusLabel)
 		return
 	}
@@ -277,10 +297,14 @@ func cmdLs(db *sql.DB, args []string) {
 		fmt.Printf("  %s\n", strings.Join(vals, ","))
 	}
 	fmt.Printf("count: %d %s tasks\n", len(tasks), statusLabel)
+	logInfo(ctx, "cmdLs", "listed tasks", slog.Int("count", len(tasks)), slog.String("status", statusLabel))
 }
 
 // cmdGet: fm-tasks get <id>
 func cmdGet(db *sql.DB, args []string) {
+	ctx := context.Background()
+	ctx = traceEnter(ctx, "cmdGet", slog.Any("args", args))
+	defer traceExit(ctx, "cmdGet")
 	if len(args) < 1 {
 		dieUsage("<id> required")
 	}
@@ -311,10 +335,14 @@ func cmdGet(db *sql.DB, args []string) {
 	if t.Meta.Valid {
 		fmt.Printf("  meta: %s\n", t.Meta.String)
 	}
+	logInfo(ctx, "cmdGet", "retrieved task", slog.String("id", id), slog.String("status", t.Status))
 }
 
 // cmdAdd: fm-tasks add --id <id> --repo <r> --kind ship|scout --title "..." [--blocked-by <id>] [--blocked-reason "..."] [--meta '{}']
 func cmdAdd(db *sql.DB, args []string) {
+	ctx := context.Background()
+	ctx = traceEnter(ctx, "cmdAdd", slog.Any("args", args))
+	defer traceExit(ctx, "cmdAdd")
 	fs := flag.NewFlagSet("add", flag.ContinueOnError)
 	fs.SetOutput(os.Stdout)
 	id := fs.String("id", "", "task id (required)")
@@ -337,7 +365,6 @@ func cmdAdd(db *sql.DB, args []string) {
 		dieMsg("meta must be valid JSON", "pass a JSON object like --meta '{\"k\":\"v\"}'")
 	}
 
-	// Idempotent: if a row with the same id exists and titles match, no-op.
 	var existingTitle string
 	err := db.QueryRow(`SELECT title FROM tasks WHERE id = ?`, *id).Scan(&existingTitle)
 	if err == nil {
@@ -370,10 +397,14 @@ func cmdAdd(db *sql.DB, args []string) {
 		dieError(err, "insert task")
 	}
 	fmt.Printf("task: %s added (queued, %s, %s)\n", *id, *repo, *kind)
+	logInfo(ctx, "cmdAdd", "task added", slog.String("id", *id), slog.String("repo", *repo), slog.String("kind", *kind))
 }
 
 // cmdStart: fm-tasks start <id> [--meta '{}']
 func cmdStart(db *sql.DB, args []string) {
+	ctx := context.Background()
+	ctx = traceEnter(ctx, "cmdStart", slog.Any("args", args))
+	defer traceExit(ctx, "cmdStart")
 	fs := flag.NewFlagSet("start", flag.ContinueOnError)
 	fs.SetOutput(os.Stdout)
 	meta := fs.String("meta", "", "optional JSON meta blob to merge")
@@ -389,7 +420,6 @@ func cmdStart(db *sql.DB, args []string) {
 		dieMsg("meta must be valid JSON", "pass a JSON object")
 	}
 
-	// Status guard: only queued → inflight is allowed.
 	var status string
 	if err := db.QueryRow(`SELECT status FROM tasks WHERE id = ?`, id).Scan(&status); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -406,7 +436,6 @@ func cmdStart(db *sql.DB, args []string) {
 			"only queued tasks can be started")
 	}
 
-	// Blocked guard: cannot start while blocked_by is set.
 	var blockedBy sql.NullString
 	if err := db.QueryRow(`SELECT blocked_by FROM tasks WHERE id = ?`, id).Scan(&blockedBy); err != nil {
 		dieError(err, "lookup blocked_by")
@@ -416,7 +445,6 @@ func cmdStart(db *sql.DB, args []string) {
 			"run: fm-tasks unblock "+id+" after the dependency is done")
 	}
 
-	// Optional meta merge.
 	if *meta != "" {
 		mergeMeta(db, id, *meta)
 	}
@@ -428,10 +456,14 @@ func cmdStart(db *sql.DB, args []string) {
 		dieError(err, "update status")
 	}
 	fmt.Printf("task: %s started (inflight)\n", id)
+	logInfo(ctx, "cmdStart", "task started", slog.String("id", id))
 }
 
 // cmdDone: fm-tasks done <id> [--pr <url>] [--report <path>] [--local]
 func cmdDone(db *sql.DB, args []string) {
+	ctx := context.Background()
+	ctx = traceEnter(ctx, "cmdDone", slog.Any("args", args))
+	defer traceExit(ctx, "cmdDone")
 	fs := flag.NewFlagSet("done", flag.ContinueOnError)
 	fs.SetOutput(os.Stdout)
 	pr := fs.String("pr", "", "PR URL")
@@ -450,7 +482,6 @@ func cmdDone(db *sql.DB, args []string) {
 		dieMsg("done requires --pr <url> or --local", "pass --pr https://github.com/... or --local")
 	}
 
-	// Status guard: only inflight → done is allowed.
 	var status string
 	if err := db.QueryRow(`SELECT status FROM tasks WHERE id = ?`, id).Scan(&status); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -482,10 +513,14 @@ func cmdDone(db *sql.DB, args []string) {
 		dieError(err, "update status")
 	}
 	fmt.Printf("task: %s done\n", id)
+	logInfo(ctx, "cmdDone", "task done", slog.String("id", id))
 }
 
 // cmdFail: fm-tasks fail <id> [--reason "..."]
 func cmdFail(db *sql.DB, args []string) {
+	ctx := context.Background()
+	ctx = traceEnter(ctx, "cmdFail", slog.Any("args", args))
+	defer traceExit(ctx, "cmdFail")
 	fs := flag.NewFlagSet("fail", flag.ContinueOnError)
 	fs.SetOutput(os.Stdout)
 	reason := fs.String("reason", "", "failure reason (stored in meta.fail_reason)")
@@ -513,8 +548,6 @@ func cmdFail(db *sql.DB, args []string) {
 		dieMsg("cannot fail a done task", "done is terminal; create a follow-up task instead")
 	}
 
-	// Persist reason into meta as a top-level field. We use a single key
-	// "fail_reason" to keep the merge deterministic and inspectable.
 	if *reason != "" {
 		payload := map[string]any{"fail_reason": *reason}
 		buf, _ := json.Marshal(payload)
@@ -528,10 +561,14 @@ func cmdFail(db *sql.DB, args []string) {
 		dieError(err, "update status")
 	}
 	fmt.Printf("task: %s failed\n", id)
+	logInfo(ctx, "cmdFail", "task failed", slog.String("id", id))
 }
 
 // cmdUnblock: fm-tasks unblock <id>
 func cmdUnblock(db *sql.DB, args []string) {
+	ctx := context.Background()
+	ctx = traceEnter(ctx, "cmdUnblock", slog.Any("args", args))
+	defer traceExit(ctx, "cmdUnblock")
 	if len(args) < 1 {
 		dieUsage("<id> required")
 	}
@@ -555,10 +592,14 @@ func cmdUnblock(db *sql.DB, args []string) {
 		dieError(err, "clear blocked_by")
 	}
 	fmt.Printf("task: %s unblocked (was blocked by %s)\n", id, prev.String)
+	logInfo(ctx, "cmdUnblock", "task unblocked", slog.String("id", id), slog.String("was_blocked_by", prev.String))
 }
 
 // cmdUnblockedBy: fm-tasks unblocked-by <id>
 func cmdUnblockedBy(db *sql.DB, args []string) {
+	ctx := context.Background()
+	ctx = traceEnter(ctx, "cmdUnblockedBy", slog.Any("args", args))
+	defer traceExit(ctx, "cmdUnblockedBy")
 	if len(args) < 1 {
 		dieUsage("<id> required")
 	}
@@ -605,10 +646,14 @@ func cmdUnblockedBy(db *sql.DB, args []string) {
 		fmt.Printf("  %s\n", strings.Join(vals, ","))
 	}
 	fmt.Printf("count: %d tasks unblocked\n", len(tasks))
+	logInfo(ctx, "cmdUnblockedBy", "listed unblocked-by", slog.String("id", id), slog.Int("count", len(tasks)))
 }
 
 // cmdMeta: fm-tasks meta <id> --set '{"key":"val"}'
 func cmdMeta(db *sql.DB, args []string) {
+	ctx := context.Background()
+	ctx = traceEnter(ctx, "cmdMeta", slog.Any("args", args))
+	defer traceExit(ctx, "cmdMeta")
 	fs := flag.NewFlagSet("meta", flag.ContinueOnError)
 	fs.SetOutput(os.Stdout)
 	set := fs.String("set", "", "JSON object to merge into meta (required)")
@@ -627,7 +672,6 @@ func cmdMeta(db *sql.DB, args []string) {
 		dieMsg("--set must be a valid JSON object", "pass JSON like --set '{\"k\":\"v\"}'")
 	}
 
-	// Validate it's an object (not array/scalar): scan into a map.
 	var probe map[string]any
 	if err := json.Unmarshal([]byte(*set), &probe); err != nil {
 		dieMsg("--set must be a JSON object", "pass JSON like --set '{\"k\":\"v\"}'")
@@ -643,11 +687,15 @@ func cmdMeta(db *sql.DB, args []string) {
 
 	mergeMeta(db, id, *set)
 	fmt.Printf("task: %s meta updated\n", id)
+	logInfo(ctx, "cmdMeta", "meta updated", slog.String("id", id))
 }
 
 // mergeMeta merges a JSON object into the meta column of a row. New keys win.
 // If the existing meta is not a JSON object, it is replaced.
 func mergeMeta(db *sql.DB, id, payload string) {
+	ctx := context.Background()
+	ctx = traceEnter(ctx, "mergeMeta", slog.String("id", id))
+	defer traceExit(ctx, "mergeMeta")
 	var existing sql.NullString
 	if err := db.QueryRow(`SELECT meta FROM tasks WHERE id = ?`, id).Scan(&existing); err != nil {
 		dieError(err, "lookup meta")
@@ -676,16 +724,10 @@ func mergeMeta(db *sql.DB, id, payload string) {
 }
 
 // cmdMigrate: fm-tasks migrate --from <path> [--dry-run]
-//
-// Parses data/backlog.md and inserts tasks. Recognized sections:
-//
-//	## In flight  → status=inflight
-//	## Queued     → status=queued
-//	## Done       → status=done
-//
-// Within each section, lines of the form `- <id> [kind] <title> [block:<id>]`
-// are parsed. The default kind is "ship".
 func cmdMigrate(db *sql.DB, args []string) {
+	ctx := context.Background()
+	ctx = traceEnter(ctx, "cmdMigrate", slog.Any("args", args))
+	defer traceExit(ctx, "cmdMigrate")
 	fs := flag.NewFlagSet("migrate", flag.ContinueOnError)
 	fs.SetOutput(os.Stdout)
 	from := fs.String("from", "", "path to backlog.md (required)")
@@ -710,7 +752,6 @@ func cmdMigrate(db *sql.DB, args []string) {
 
 	inserted := 0
 	for _, e := range entries {
-		// Skip if already present with same title.
 		var existingTitle string
 		err := db.QueryRow(`SELECT title FROM tasks WHERE id = ?`, e.ID).Scan(&existingTitle)
 		switch {
@@ -720,7 +761,6 @@ func cmdMigrate(db *sql.DB, args []string) {
 			}
 			dieMsg(e.ID+" exists with different title", "remove it or pick a new id")
 		case errors.Is(err, sql.ErrNoRows):
-			// fall through to insert
 		default:
 			dieError(err, "lookup existing task")
 		}
@@ -745,6 +785,7 @@ func cmdMigrate(db *sql.DB, args []string) {
 		return
 	}
 	fmt.Printf("migrate: %d tasks inserted\n", inserted)
+	logInfo(ctx, "cmdMigrate", "migration complete", slog.Int("inserted", inserted))
 }
 
 // backlogEntry is a parsed row from data/backlog.md.
@@ -764,6 +805,9 @@ type backlogEntry struct {
 // grammar is intentionally narrow: a line starting with `- ` inside a known
 // section becomes a task; everything else is ignored.
 func parseBacklog(f *os.File) ([]backlogEntry, error) {
+	ctx := context.Background()
+	ctx = traceEnter(ctx, "parseBacklog")
+	defer traceExit(ctx, "parseBacklog")
 	scanner := bufio.NewScanner(f)
 	scanner.Buffer(make([]byte, 1<<16), 1<<20)
 
@@ -810,7 +854,6 @@ func parseBacklog(f *os.File) ([]backlogEntry, error) {
 	if err := scanner.Err(); err != nil {
 		return nil, err
 	}
-	// Stable order: inflight first, then queued, then done, each by id.
 	sort.SliceStable(out, func(i, j int) bool {
 		ri := sectionRank(out[i].Status)
 		rj := sectionRank(out[j].Status)
@@ -842,7 +885,6 @@ func parseBacklogLine(line, sectionStatus, now string) *backlogEntry {
 	if line == "" {
 		return nil
 	}
-	// Pull off the id (first whitespace-delimited token).
 	sp := strings.IndexAny(line, " \t")
 	if sp <= 0 {
 		return nil
@@ -853,7 +895,6 @@ func parseBacklogLine(line, sectionStatus, now string) *backlogEntry {
 	}
 	rest := strings.TrimSpace(line[sp:])
 
-	// Optional kind: literal "ship" or "scout" appearing as a standalone token.
 	kind := "ship"
 	if rest != "" {
 		next := strings.IndexAny(rest, " \t")
@@ -873,23 +914,19 @@ func parseBacklogLine(line, sectionStatus, now string) *backlogEntry {
 		}
 	}
 
-	// Optional block:<id> at the end of the line.
 	var blockedBy string
 	if i := strings.LastIndex(rest, "block:"); i >= 0 {
 		tail := strings.TrimSpace(rest[i+len("block:"):])
-		// The blocker id ends at the first whitespace.
 		if sp := strings.IndexAny(tail, " \t"); sp >= 0 {
 			tail = tail[:sp]
 		}
 		if isValidID(tail) {
 			blockedBy = tail
 		}
-		// Strip the annotation from the title.
 		rest = strings.TrimSpace(rest[:i])
 	}
 
 	if rest == "" {
-		// Title cannot be empty.
 		return nil
 	}
 
@@ -935,6 +972,9 @@ func isValidID(s string) bool {
 // cmdNext: fm-tasks next [--limit N] — print queued tasks ready to dispatch
 // (not blocked by any inflight/queued task). Ordered by added_at ASC.
 func cmdNext(db *sql.DB, args []string) {
+	ctx := context.Background()
+	ctx = traceEnter(ctx, "cmdNext", slog.Any("args", args))
+	defer traceExit(ctx, "cmdNext")
 	fs := flag.NewFlagSet("next", flag.ContinueOnError)
 	fs.SetOutput(os.Stdout)
 	limit := fs.Int("limit", 5, "max tasks to print")
@@ -942,8 +982,6 @@ func cmdNext(db *sql.DB, args []string) {
 		dieUsage("--limit N is optional")
 	}
 
-	// A queued task is ready when its blocker is either absent (NULL) or in
-	// status done/failed (i.e. the dependency is satisfied).
 	rows, err := db.Query(`
 		SELECT t.id, t.title, t.repo, t.kind, t.blocked_by, t.blocked_reason
 		FROM tasks t
@@ -985,11 +1023,15 @@ func cmdNext(db *sql.DB, args []string) {
 	for _, r := range ready {
 		fmt.Printf("  %s  [%s/%s]  %s\n", r.ID, r.Repo, r.Kind, r.Title)
 	}
+	logInfo(ctx, "cmdNext", "ready tasks", slog.Int("count", len(ready)))
 }
 
 // cmdWhy: fm-tasks why <id> — trace the blocker chain for a task.
 // Walks the blocked_by chain up to 10 levels deep and prints each hop's status.
 func cmdWhy(db *sql.DB, args []string) {
+	ctx := context.Background()
+	ctx = traceEnter(ctx, "cmdWhy", slog.Any("args", args))
+	defer traceExit(ctx, "cmdWhy")
 	if len(args) < 1 {
 		dieUsage("<id> required")
 	}
@@ -1005,7 +1047,7 @@ func cmdWhy(db *sql.DB, args []string) {
 	for i := 0; i < 10; i++ {
 		if seen[cur] {
 			fmt.Println("why: cycle detected at", cur)
-			break
+			return
 		}
 		seen[cur] = true
 		var h hop
@@ -1068,15 +1110,22 @@ func cmdWhy(db *sql.DB, args []string) {
 		fmt.Printf("%s[%s] %s  status=%s  blocks-on=%s  reason=%s\n",
 			indent, h.ID, h.Title, h.Status, blocker, reason)
 	}
+	logInfo(ctx, "cmdWhy", "completed why trace", slog.String("id", startID), slog.Int("chain_length", len(chain)))
 }
 
 func main() {
+	ctx := context.Background()
+	sub := ""
+	if len(os.Args) > 1 {
+		sub = os.Args[1]
+	}
+	ctx = traceEnter(ctx, "main", slog.String("subcommand", sub))
+	defer traceExit(ctx, "main")
 	if len(os.Args) < 2 {
 		fmt.Fprintln(os.Stdout, "usage: fm-tasks <subcommand> [args]")
 		fmt.Fprintln(os.Stdout, "subcommands: ls, get, add, start, done, fail, unblock, unblocked-by, next, why, meta, migrate, tui")
 		os.Exit(2)
 	}
-	sub := os.Args[1]
 	rest := os.Args[2:]
 
 	db := openDB()
@@ -1110,6 +1159,7 @@ func main() {
 	case "tui":
 		cmdTUI(db)
 	default:
+		logWarn(ctx, "main", "unknown subcommand", slog.String("sub", sub))
 		fmt.Fprintf(os.Stdout, "usage: fm-tasks <subcommand> [args]\n")
 		fmt.Fprintf(os.Stdout, "error: unknown subcommand %q\n", sub)
 		fmt.Fprintln(os.Stdout, "help: valid subcommands: ls, get, add, start, done, fail, unblock, unblocked-by, next, why, meta, migrate")

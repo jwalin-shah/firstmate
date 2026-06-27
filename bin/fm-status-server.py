@@ -25,10 +25,10 @@ from urllib.parse import urlparse, parse_qs
 
 FM_ROOT = "/Users/jwalinshah/projects/firstmate"
 STATE_DIR = f"{FM_ROOT}/state"
-MINTMUX_SOCK = "/var/folders/8s/f4b_dnwd55x_0jn7sjlktk7c0000gp/T/mintmux.sock"
+MINTMUX_SOCK = "/tmp/mintmux-502.sock"
 
 
-def run(cmd, timeout=5):
+def run(cmd, timeout=60):
     try:
         return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
     except Exception as e:
@@ -92,6 +92,90 @@ def capture_pane(pane_id, max_bytes=4000):
     return "\n".join(lines[-30:])  # last 30 non-empty lines
 
 
+def get_drift(quick=False):
+    """Run fm-drift-check.sh --json, return parsed sections. quick=True skips slow checks."""
+    cmd = ["bash", f"{FM_ROOT}/bin/fm-drift-check.sh", "--json"]
+    if quick:
+        cmd.append("--quick")
+    res = run(cmd)
+    if res.returncode != 0 and not res.stdout:
+        return {"drift": False, "total_fail": -1, "sections": []}
+    try:
+        return json.loads(res.stdout)
+    except json.JSONDecodeError:
+        return {"drift": False, "total_fail": -1, "sections": [], "raw": res.stdout}
+
+
+def render_drift_summary(drift):
+    """Render a compact drift summary for the main status page."""
+    if not drift.get("drift"):
+        return '<p class="ok">Drift check not available</p>'
+    total = drift.get("total_fail", 0)
+    if total == 0:
+        return '<p class="live">✓ No drift detected</p>'
+    parts = []
+    for sec in drift.get("sections", []):
+        name = sec.get("section", "")
+        fails = [c for c in sec.get("checks", []) if c.get("status") not in ("ok", "info")]
+        if fails:
+            counts = {}
+            for c in fails:
+                s = c.get("status", "?")
+                counts[s] = counts.get(s, 0) + 1
+            summary = ", ".join(f"{n} {s}" for s, n in counts.items())
+            parts.append(f'<div class="stale">{name}: {summary}</div>')
+    return ''.join(parts) if parts else '<p class="live">✓ Clean</p>'
+
+
+def render_drift_detail(drift):
+    """Render full drift detail for the /drift endpoint."""
+    html = ['<h2>Drift Check</h2>']
+    if not drift.get("drift"):
+        html.append('<p class="error">Drift check failed to run</p>')
+        return ''.join(html)
+    
+    total = drift.get("total_fail", 0)
+    if total == 0:
+        html.append('<p class="live">✓ No drift detected — all clear</p>')
+    else:
+        html.append(f'<p class="error">{total} drift issues found</p>')
+    
+    for sec in drift.get("sections", []):
+        name = sec.get("section", "?")
+        html.append(f'<h3>{name}</h3>')
+        html.append('<table><tr><th>Status</th><th>Message</th></tr>')
+        for c in sec.get("checks", []):
+            status = c.get("status", "?")
+            msg = c.get("msg", "")
+            cls = "error" if status in ("fail","missing","shadow","atrisk") else ("stale" if status in ("warn","unknown") else "ok")
+            html.append(f'<tr class="{cls}"><td>{status}</td><td>{msg}</td></tr>')
+        html.append('</table>')
+    html.append(f'<p><a href="/">Back to status</a></p>')
+    return ''.join(html)
+    """Capture the last N bytes of a mintmux pane, strip TUI control codes."""
+    if not pane_id:
+        return ""
+    res = run(["mm-ctl", "capture", "-sock=" + MINTMUX_SOCK, "-bytes", str(max_bytes), str(pane_id)], timeout=3)
+    if res.returncode != 0:
+        return f"(capture failed: {res.stderr.strip()})"
+    raw = res.stdout
+
+    # Strip ANSI escape codes: ESC [ ... letter
+    import re
+    text = re.sub(r'\x1b\[[0-9;]*[a-zA-Z]', '', raw)
+    text = re.sub(r'\x1b\][^\x07]*\x07', '', text)  # OSC sequences
+    text = re.sub(r'\x1b[()].', '', text)  # charset switches
+    text = re.sub(r'[\x00-\x08\x0b-\x1f]', '', text)  # other control chars
+
+    # Collapse runs of whitespace
+    lines = []
+    for line in text.splitlines():
+        line = line.rstrip()
+        if line.strip():
+            lines.append(line)
+    return "\n".join(lines[-30:])  # last 30 non-empty lines
+
+
 def render_html(sections, pane_peek=None):
     pane_peek = pane_peek or {}
     html_parts = ["""<!DOCTYPE html>
@@ -128,6 +212,12 @@ def render_html(sections, pane_peek=None):
 """]
 
     html_parts.append(f'<p id="last-updated">last update: {subprocess.run(["date", "+%Y-%m-%d %H:%M:%S"], capture_output=True, text=True).stdout.strip()}</p>')
+
+    # Drift summary (collapsed by default)
+    html_parts.append("<h2>Drift <span style='font-size:0.6em;color:#888;'>(auto-refresh 30s)</span></h2>")
+    html_parts.append('<div hx-get="/drift-summary" hx-trigger="every 30s" hx-swap="innerHTML">')
+    html_parts.append(render_drift_summary(get_drift(quick=True)))
+    html_parts.append('</div>')
 
     # Services
     html_parts.append("<h2>Services</h2><pre>")
@@ -235,6 +325,20 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Type", "text/plain; charset=utf-8")
             self.end_headers()
             self.wfile.write(sections["raw"].encode())
+        elif url.path == "/drift":
+            drift = get_drift(quick=False)
+            body = render_drift_detail(drift)
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(body.encode())
+        elif url.path == "/drift-summary":
+            drift = get_drift(quick=True)
+            body = render_drift_summary(drift)
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(body.encode())
         else:
             self.send_response(404)
             self.end_headers()

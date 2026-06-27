@@ -203,6 +203,17 @@ else
 fi
 python3 "$FM_ROOT/bin/fm-learn-log-import.py" >/dev/null 2>&1 || true
 
+# Per-project context: save a structured entry to data/context/<project>.md
+if [ -n "$STATUS_MEANINGFUL" ] || [ -n "$HAS_REPORT" ] || [ -n "$HAD_COMMITS" ]; then
+  PROJ_NAME=$(basename "$PROJ")
+  CONTEXT_LEARNINGS="${REPORT_SUMMARY:-$LAST_STATUS}"
+  PR_LINK=""
+  if [ -f "$STATE/$ID.meta" ]; then
+    PR_LINK=$(grep '^pr=' "$STATE/$ID.meta" 2>/dev/null | cut -d= -f2- || true)
+  fi
+  "$FM_ROOT/bin/fm-context-save.sh" "$PROJ_NAME" "$ID" "$CONTEXT_LEARNINGS" "$LAST_STATUS" "$PR_LINK" 2>/dev/null || true
+fi
+
 # Axiom extraction: mine engineering axioms from task outcome
 "$FM_ROOT/bin/fm-axiom-ingest.sh" "$ID"
 

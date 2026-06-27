@@ -1,8 +1,10 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
+	"log/slog"
 	"os"
 	"strings"
 
@@ -37,7 +39,9 @@ type tuiModel struct {
 type reloadMsg []Task
 
 func loadTasks(db *sql.DB, repoFilter string) ([]Task, error) {
-	// Fetch all non-done tasks + last 10 done, ordered for display.
+	ctx := context.Background()
+	ctx = traceEnter(ctx, "loadTasks", slog.String("filter", repoFilter))
+	defer traceExit(ctx, "loadTasks")
 	query := `
 		SELECT id, title, repo, kind, status,
 		       COALESCE(blocked_by,''), COALESCE(pr_url,''),
@@ -79,6 +83,9 @@ func loadTasks(db *sql.DB, repoFilter string) ([]Task, error) {
 }
 
 func doReload(db *sql.DB, filter string) tea.Cmd {
+	ctx := context.Background()
+	ctx = traceEnter(ctx, "doReload", slog.String("filter", filter))
+	defer traceExit(ctx, "doReload")
 	return func() tea.Msg {
 		tasks, _ := loadTasks(db, filter)
 		return reloadMsg(tasks)
@@ -86,6 +93,9 @@ func doReload(db *sql.DB, filter string) tea.Cmd {
 }
 
 func initTUI(db *sql.DB) tuiModel {
+	ctx := context.Background()
+	ctx = traceEnter(ctx, "initTUI")
+	defer traceExit(ctx, "initTUI")
 	tasks, _ := loadTasks(db, "")
 	return tuiModel{db: db, tasks: tasks}
 }
@@ -196,6 +206,9 @@ func (m tuiModel) selectedTask() *Task {
 }
 
 func transitionTask(db *sql.DB, id, status string) error {
+	ctx := context.Background()
+	ctx = traceEnter(ctx, "transitionTask", slog.String("id", id), slog.String("status", status))
+	defer traceExit(ctx, "transitionTask")
 	var col string
 	switch status {
 	case "done":
