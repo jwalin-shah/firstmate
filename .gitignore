@@ -7,3 +7,5 @@ data/
 .env
 config/crew-harness
 .aider.tags.cache.v4/
+.tldr/
+notify-push.log
