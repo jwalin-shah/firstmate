@@ -54,9 +54,16 @@ set -euo pipefail
 if [ "${FM_SECRETS_BACKEND:-}" = infisical ]; then
   exec "$FM_ROOT/bin/fm-with-secrets.sh" "$@"
 fi
-# Skip the watcher guard when re-exec'd for one pair of a batch (FM_SPAWN_NO_GUARD is
-# set by the batch loop below), so the guard runs once for the batch, not once per pair.
-[ -n "${FM_SPAWN_NO_GUARD:-}" ] || "$FM_ROOT/bin/fm-guard.sh" || true
+# Watcher-liveness gate. Every spawn needs the watcher alive to supervise it, so a
+# stale liveness beacon (state/.last-watcher-beat older than FM_SPAWN_GUARD_GRACE,
+# default 120s) hard-blocks the spawn via fm-guard.sh --spawn-block (non-zero exit).
+# A missing beacon (first launch, no watcher yet) and a fresh beacon both pass.
+# Skipped when re-exec'd for one pair of a batch (FM_SPAWN_NO_GUARD set by the batch
+# loop below), so the gate runs once at top level, not once per pair. Bypass entirely
+# with FM_SKIP_WATCHER_CHECK=1.
+if [ -z "${FM_SPAWN_NO_GUARD:-}" ] && [ "${FM_SKIP_WATCHER_CHECK:-0}" != "1" ]; then
+  "$FM_ROOT/bin/fm-guard.sh" --spawn-block || exit 1
+fi
 KIND=ship
 POS=()
 for a in "$@"; do
