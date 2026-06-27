@@ -141,6 +141,9 @@ fi
 } >> "$LEARN_LOG"
 printf '%s\n' "📚 Learn: appended task outcome to data/learn-log.md"
 
+# Axiom extraction: mine engineering axioms from task outcome
+"$FM_ROOT/bin/fm-axiom-ingest.sh" "$ID"
+
 # Mark the task done in fm-tasks (tasks.db is the durable queue; backlog.md is derived)
 if command -v fm-tasks >/dev/null 2>&1; then
   fm-tasks done "$ID" 2>/dev/null && printf '%s\n' "✅ fm-tasks: marked $ID done" || true
