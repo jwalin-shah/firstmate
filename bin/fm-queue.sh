@@ -1,34 +1,13 @@
 #!/usr/bin/env bash
-# Firstmate queue: a small JSON-backed task registry at state/queue.json that
-# replaces data/backlog.md as the durable source of truth for FleetViewer.
-# Firstmate is the only writer; FleetViewer and the watcher are read-only.
-# All mutations go through this script so the on-disk file stays valid JSON
-# even under concurrent writes (the rename is atomic on POSIX, and the inner
-# jq invocation reads the whole file + writes a fresh object per call, so
-# racing writers each produce a complete document; the later one wins, which
-# is the same guarantee every other state file in firstmate already has).
-#
-# Schema (state/queue.json):
-#   { "tasks": { "<id>": { id, title, repo, kind, mode, status, added, updated,
-#                          blocked_by?, pr_url?, merged_at?, report_path? } } }
-# Status values: queued, in-flight, done, failed. Blockers live in blocked_by[]
-# (an array of ids from the same registry). The fm-tasks SQLite DB at
-# data/tasks.db is the parallel authoritative store for runtime metadata
-# (started_at, done_at, fail_reason, report_path, meta blob); this script
-# treats the SQLite as read-only for derivation purposes and writes back
-# only via fm-tasks when --mark-done is called.
+# Firstmate queue display formatter.
+# data/tasks.db (SQLite via fm-tasks) is the canonical task store.
+# This script is a read-only display layer — it derives data/backlog.md from
+# tasks.db and provides --mark-done self-healing. Do not add mutation subcommands;
+# all writes go through `fm-tasks` to preserve WAL invariants.
 #
 # Usage:
-#   fm-queue.sh add <id> <repo> <title> [--kind scout] [--mode direct-PR] [--blocked-by id,id]
-#   fm-queue.sh set-status <id> <queued|in-flight|done|failed>
-#   fm-queue.sh set-pr <id> <url>
-#   fm-queue.sh set-merged <id> <ISO8601>
-#   fm-queue.sh set-report <id> <path>          # scout/local-only done indicator
-#   fm-queue.sh get <id>                        # prints JSON for one task, or {} if unknown
-#   fm-queue.sh list                            # prints the full queue.json
-#   fm-queue.sh to-markdown | --once            # derive data/backlog.md from SQLite+queue.json
-#   fm-queue.sh --mark-done <id>                # self-heal: mark fm-tasks done when meta says
-#                                              # the pane is gone and last status is done:/failed:
+#   fm-queue.sh to-markdown | --once  # derive data/backlog.md from data/tasks.db
+#   fm-queue.sh --mark-done <id>      # self-heal: drive fm-tasks done/fail from meta+status
 set -euo pipefail
 [ -n "${FM_ROOT:-}" ] || FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 . "$FM_ROOT/bin/fm-init.sh"
@@ -58,85 +37,9 @@ cmd=${1:-}
 shift || true
 
 case "$cmd" in
-  add)
-    ID=${1:?fm-queue.sh add: <id> <repo> <title> required}
-    REPO=${2:?fm-queue.sh add: <id> <repo> <title> required}
-    TITLE=${3:?fm-queue.sh add: <id> <repo> <title> required}
-    shift 3
-    KIND=ship
-    MODE=no-mistakes
-    BLOCKED_BY=""
-    while [ "$#" -gt 0 ]; do
-      case "$1" in
-        --kind) KIND=${2:?--kind requires a value}; shift 2 ;;
-        --mode) MODE=${2:?--mode requires a value}; shift 2 ;;
-        --blocked-by) BLOCKED_BY=${2:?--blocked-by requires a value}; shift 2 ;;
-        *) echo "fm-queue.sh add: unknown arg '$1'" >&2; exit 2 ;;
-      esac
-    done
-    case "$KIND" in ship|scout) ;; *) echo "fm-queue.sh add: --kind must be ship or scout, got '$KIND'" >&2; exit 2 ;; esac
-    case "$MODE" in no-mistakes|direct-PR|local-only) ;; *) echo "fm-queue.sh add: --mode must be no-mistakes, direct-PR, or local-only, got '$MODE'" >&2; exit 2 ;; esac
-    # Build blocked_by JSON array from a comma-separated list. Empty -> omit key.
-    BLOCKED_LIT='[]'
-    if [ -n "$BLOCKED_BY" ]; then
-      BLOCKED_LIT=$(printf '%s' "$BLOCKED_BY" | jq -R 'split(",") | map(select(length>0))')
-    fi
-    # shellcheck disable=SC2016  # $id/$title/$repo/$kind/$mode/$blocked/$now are jq variables, not shell.
-    FILTER=$(cat <<JQF
-.tasks[\$id] = (
-  { id: \$id, title: \$title, repo: \$repo, kind: \$kind, mode: \$mode
-  , status: "queued", added: \$now, updated: \$now }
-  + (if (\$blocked | length) > 0 then { blocked_by: \$blocked } else {} end)
-)
-JQF
-)
-    ensure_queue
-    jq --arg id "$ID" --arg now "$(now_iso)" \
-       --arg title "$TITLE" --arg repo "$REPO" --arg kind "$KIND" --arg mode "$MODE" \
-       --argjson blocked "$BLOCKED_LIT" \
-       "$FILTER" "$QUEUE" > "$QUEUE.tmp.$$"
-    mv "$QUEUE.tmp.$$" "$QUEUE"
-    ;;
-
-  set-status)
-    ID=${1:?fm-queue.sh set-status: <id> <status> required}
-    STATUS=${2:?fm-queue.sh set-status: <id> <status> required}
-    case "$STATUS" in queued|in-flight|done|failed) ;; *) echo "fm-queue.sh set-status: status must be queued|in-flight|done|failed, got '$STATUS'" >&2; exit 2 ;; esac
-    # shellcheck disable=SC2016  # $id/$status/$now are jq variables, not shell.
-    FILTER='if .tasks[$id] == null then . else .tasks[$id].status = $status | .tasks[$id].updated = $now end'
-    ensure_queue
-    jq --arg id "$ID" --arg now "$(now_iso)" --arg status "$STATUS" "$FILTER" "$QUEUE" > "$QUEUE.tmp.$$"
-    mv "$QUEUE.tmp.$$" "$QUEUE"
-    ;;
-
-  set-pr)
-    ID=${1:?fm-queue.sh set-pr: <id> <url> required}
-    URL=${2:?fm-queue.sh set-pr: <id> <url> required}
-    # shellcheck disable=SC2016  # $id/$url/$now are jq variables, not shell.
-    FILTER='if .tasks[$id] == null then . else .tasks[$id].pr_url = $url | .tasks[$id].updated = $now end'
-    ensure_queue
-    jq --arg id "$ID" --arg now "$(now_iso)" --arg url "$URL" "$FILTER" "$QUEUE" > "$QUEUE.tmp.$$"
-    mv "$QUEUE.tmp.$$" "$QUEUE"
-    ;;
-
-  set-merged)
-    ID=${1:?fm-queue.sh set-merged: <id> <ISO8601> required}
-    MERGED_AT=${2:?fm-queue.sh set-merged: <id> <ISO8601> required}
-    # shellcheck disable=SC2016  # $id/$merged/$now are jq variables, not shell.
-    FILTER='if .tasks[$id] == null then . else .tasks[$id].merged_at = $merged | .tasks[$id].status = "done" | .tasks[$id].updated = $now end'
-    ensure_queue
-    jq --arg id "$ID" --arg now "$(now_iso)" --arg merged "$MERGED_AT" "$FILTER" "$QUEUE" > "$QUEUE.tmp.$$"
-    mv "$QUEUE.tmp.$$" "$QUEUE"
-    ;;
-
-  set-report)
-    ID=${1:?fm-queue.sh set-report: <id> <path> required}
-    PATH_=${2:?fm-queue.sh set-report: <id> <path> required}
-    # shellcheck disable=SC2016  # $id/$path/$now are jq variables, not shell.
-    FILTER='if .tasks[$id] == null then . else .tasks[$id].report_path = $path | .tasks[$id].status = "done" | .tasks[$id].updated = $now end'
-    ensure_queue
-    jq --arg id "$ID" --arg now "$(now_iso)" --arg path "$PATH_" "$FILTER" "$QUEUE" > "$QUEUE.tmp.$$"
-    mv "$QUEUE.tmp.$$" "$QUEUE"
+  add|set-status|set-pr|set-merged|set-report)
+    echo "fm-queue.sh: '$cmd' is deprecated — use fm-tasks instead (SQLite is canonical)" >&2
+    exit 1
     ;;
 
   get)
@@ -151,10 +54,8 @@ JQF
     ;;
 
   to-markdown|--once)
-    # Derive data/backlog.md from the union of state/queue.json and
-    # data/tasks.db (SQLite). The DB wins for any field both stores, because
-    # the binary is the runtime source of truth; queue.json is the planning
-    # layer. Output goes through a temp file + atomic rename so a reader of
+    # Derive data/backlog.md from data/tasks.db (SQLite — canonical store).
+    # Output goes through a temp file + atomic rename so a reader of
     # backlog.md never sees a half-written file.
     #
     # When neither source has data, we still emit the three section headers
@@ -168,7 +69,6 @@ JQF
     # titles in tasks.db can contain `|`, `-`, and newlines, so a pure-bash
     # parser is fragile. Python is universal on macOS/Linux dev hosts and
     # adds no new dependency for firstmate.
-    ensure_queue
     if ! command -v sqlite3 >/dev/null 2>&1 || ! command -v python3 >/dev/null 2>&1; then
       echo "fm-queue.sh to-markdown: requires sqlite3 and python3 on PATH" >&2
       exit 1
@@ -226,7 +126,7 @@ for raw in sys.stdin:
 out = []
 out.append("# Fleet backlog")
 out.append("")
-out.append("Auto-derived from data/tasks.db (SQLite) + state/queue.json by bin/fm-queue.sh.")
+out.append("Auto-derived from data/tasks.db (SQLite) by bin/fm-queue.sh to-markdown.")
 out.append("Do not hand-edit; edits are overwritten on the next spawn/teardown/session.")
 out.append("")
 out.append("## In flight")

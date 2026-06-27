@@ -297,10 +297,9 @@ mkdir -p "$FM_ROOT/state"
 # status line (format: "state:task-id: note"). The bridge parses it directly
 # from pane output. No external pane→task mapping needed.
 
-# Best-effort: mirror the spawn into the SQLite task store. The data/<id>/brief.md
-# may exist with a one-line title we can reuse; fall back to a generic placeholder
-# when it is absent. Errors are swallowed so a missing/broken fm-tasks never blocks
-# spawn (data/backlog.md remains the canonical store for this run).
+# Mirror the spawn into the SQLite task store (data/tasks.db is canonical).
+# The brief's h1 title is reused as the task title; falls back to a generic
+# placeholder. Errors are swallowed so a missing/broken fm-tasks never blocks spawn.
 SPAWN_TITLE="firstmate task $ID ($KIND)"
 if [ -f "$BRIEF" ]; then
   _t=$(grep -m1 '^# ' "$BRIEF" 2>/dev/null | sed -e 's/^# //' -e 's/[[:space:]]*$//')
@@ -310,6 +309,15 @@ fm-tasks add --id "$ID" --repo "$PROJ_NAME" --kind "$KIND" --title "$SPAWN_TITLE
   >/dev/null 2>&1 || true
 fm-tasks start "$ID" >/dev/null 2>&1 || true
 
+# Append repo structure to brief so crewmate starts with codebase context.
+# Capped at 6KB to keep brief within context budget. Non-fatal if llm-tldr
+# is unavailable or the worktree isn't a recognised code repo.
+if command -v llm-tldr >/dev/null 2>&1 && [ -d "${WT:-}" ]; then
+  _struct=$(llm-tldr structure "$WT" 2>/dev/null | head -c 6000 || true)
+  if [ -n "$_struct" ]; then
+    printf '\n\n## Codebase structure (auto-injected at spawn)\n\n```json\n%s\n```\n' "$_struct" >> "$BRIEF"
+  fi
+fi
 
 LAUNCH=${LAUNCH//__BRIEF__/$BRIEF}
 LAUNCH=${LAUNCH//__TURNEND__/$TURNEND}
