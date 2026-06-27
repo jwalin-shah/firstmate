@@ -12,26 +12,9 @@ set -euo pipefail
 [ -n "${FM_ROOT:-}" ] || FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 . "$FM_ROOT/bin/fm-init.sh"
 DATA="${FM_DATA_OVERRIDE:-$FM_ROOT/data}"
-QUEUE="$STATE/queue.json"
 BACKLOG="$DATA/backlog.md"
-mkdir -p "$DATA"
-
-# Where fm-tasks stores its DB. The binary is the same canonical queue
-# (data/tasks.db per the orbit/cmd/fm-tasks schema); we read from it but never
-# write directly — writes go through `fm-tasks done/fail` to keep its WAL
-# invariants intact.
 TASKS_DB="${FM_TASKS_DB_OVERRIDE:-$DATA/tasks.db}"
-
-now_iso() {
-  # ISO 8601 in UTC with seconds; matches the format gh emits for mergedAt.
-  date -u +%Y-%m-%dT%H:%M:%SZ
-}
-
-ensure_queue() {
-  if [ ! -f "$QUEUE" ]; then
-    printf '{"tasks":{}}\n' > "$QUEUE"
-  fi
-}
+mkdir -p "$DATA"
 
 cmd=${1:-}
 shift || true
@@ -42,15 +25,9 @@ case "$cmd" in
     exit 1
     ;;
 
-  get)
-    ID=${1:?fm-queue.sh get: <id> required}
-    ensure_queue
-    jq --arg id "$ID" '.tasks[$id] // {}' "$QUEUE"
-    ;;
-
-  list)
-    ensure_queue
-    cat "$QUEUE"
+  get|list)
+    echo "fm-queue.sh: '$cmd' is deprecated — use 'fm-tasks ls' instead (SQLite is canonical)" >&2
+    exit 1
     ;;
 
   to-markdown|--once)
