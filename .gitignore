@@ -11,3 +11,6 @@ config/secondmate-harness
 config/backlog-backend
 config/backend
 config/x-mode.env
+.cocoindex_code/
+.tldr/
+.tldrignore
