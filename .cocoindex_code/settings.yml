@@ -1,0 +1,175 @@
+chunkers:
+- ext: go
+  module: function_chunker:chunk_go
+- ext: py
+  module: function_chunker:chunk_py
+- ext: rs
+  module: function_chunker:chunk_rs
+- ext: ts
+  module: function_chunker:chunk_ts
+- ext: js
+  module: function_chunker:chunk_js
+- ext: c
+  module: function_chunker:chunk_c
+- ext: bash
+  module: function_chunker:chunk_default
+- ext: cc
+  module: function_chunker:chunk_default
+- ext: cjs
+  module: function_chunker:chunk_default
+- ext: cpp
+  module: function_chunker:chunk_default
+- ext: cs
+  module: function_chunker:chunk_default
+- ext: css
+  module: function_chunker:chunk_default
+- ext: cxx
+  module: function_chunker:chunk_default
+- ext: dpr
+  module: function_chunker:chunk_default
+- ext: dtd
+  module: function_chunker:chunk_default
+- ext: f
+  module: function_chunker:chunk_default
+- ext: f03
+  module: function_chunker:chunk_default
+- ext: f90
+  module: function_chunker:chunk_default
+- ext: f95
+  module: function_chunker:chunk_default
+- ext: h
+  module: function_chunker:chunk_default
+- ext: hh
+  module: function_chunker:chunk_default
+- ext: hpp
+  module: function_chunker:chunk_default
+- ext: htm
+  module: function_chunker:chunk_default
+- ext: html
+  module: function_chunker:chunk_default
+- ext: hxx
+  module: function_chunker:chunk_default
+- ext: java
+  module: function_chunker:chunk_default
+- ext: json
+  module: function_chunker:chunk_default
+- ext: jsx
+  module: function_chunker:chunk_default
+- ext: kt
+  module: function_chunker:chunk_default
+- ext: kts
+  module: function_chunker:chunk_default
+- ext: lua
+  module: function_chunker:chunk_default
+- ext: md
+  module: function_chunker:chunk_default
+- ext: mdx
+  module: function_chunker:chunk_default
+- ext: mjs
+  module: function_chunker:chunk_default
+- ext: pas
+  module: function_chunker:chunk_default
+- ext: php
+  module: function_chunker:chunk_default
+- ext: pyi
+  module: function_chunker:chunk_default
+- ext: r
+  module: function_chunker:chunk_default
+- ext: rb
+  module: function_chunker:chunk_default
+- ext: rst
+  module: function_chunker:chunk_default
+- ext: scala
+  module: function_chunker:chunk_default
+- ext: scss
+  module: function_chunker:chunk_default
+- ext: sh
+  module: function_chunker:chunk_default
+- ext: sol
+  module: function_chunker:chunk_default
+- ext: sql
+  module: function_chunker:chunk_default
+- ext: svelte
+  module: function_chunker:chunk_default
+- ext: swift
+  module: function_chunker:chunk_default
+- ext: toml
+  module: function_chunker:chunk_default
+- ext: txt
+  module: function_chunker:chunk_default
+- ext: vue
+  module: function_chunker:chunk_default
+- ext: xml
+  module: function_chunker:chunk_default
+- ext: yaml
+  module: function_chunker:chunk_default
+- ext: yml
+  module: function_chunker:chunk_default
+- ext: zsh
+  module: function_chunker:chunk_default
+exclude_patterns:
+- '**/.*'
+- '**/__pycache__'
+- '**/node_modules'
+- '**/target'
+- '**/build/assets'
+- '**/dist'
+- '**/vendor/*.*/*'
+- '**/vendor/*'
+- '**/.cocoindex_code'
+include_patterns:
+- '**/*.py'
+- '**/*.pyi'
+- '**/*.js'
+- '**/*.jsx'
+- '**/*.ts'
+- '**/*.tsx'
+- '**/*.mjs'
+- '**/*.cjs'
+- '**/*.rs'
+- '**/*.go'
+- '**/*.java'
+- '**/*.c'
+- '**/*.h'
+- '**/*.cpp'
+- '**/*.hpp'
+- '**/*.cc'
+- '**/*.cxx'
+- '**/*.hxx'
+- '**/*.hh'
+- '**/*.cs'
+- '**/*.sql'
+- '**/*.sh'
+- '**/*.bash'
+- '**/*.zsh'
+- '**/*.md'
+- '**/*.mdx'
+- '**/*.txt'
+- '**/*.rst'
+- '**/*.php'
+- '**/*.lua'
+- '**/*.rb'
+- '**/*.swift'
+- '**/*.kt'
+- '**/*.kts'
+- '**/*.scala'
+- '**/*.r'
+- '**/*.html'
+- '**/*.htm'
+- '**/*.svelte'
+- '**/*.vue'
+- '**/*.css'
+- '**/*.scss'
+- '**/*.json'
+- '**/*.xml'
+- '**/*.yaml'
+- '**/*.yml'
+- '**/*.toml'
+- '**/*.sol'
+- '**/*.pas'
+- '**/*.dpr'
+- '**/*.dtd'
+- '**/*.f'
+- '**/*.f90'
+- '**/*.f95'
+- '**/*.f03'
