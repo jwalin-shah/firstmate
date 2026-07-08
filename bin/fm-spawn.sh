@@ -851,11 +851,11 @@ fi
 # the env is set when the agent starts; the brief sleep lets the export land.
 spawn_send_text_line "$T" "export GOTMPDIR=$TASK_TMP/gotmp"
 sleep 0.3
-spawn_send_literal "$T" "$LAUNCH"
-# ponytail: send-keys -l types characters one-at-a-time. Long commands with $()
-# (140+ chars) take longer than 0.3s to buffer. Enter before the buffer drains
-# = command sits unsubmitted. 2s covers any realistic launch command length.
-sleep 2
-spawn_send_key "$T" Enter
+# ponytail: send-keys -l types character-at-a-time and drops Enter when the
+# string contains $() special characters. Write the launch command to a temp
+# file and source it instead — zero special chars, instant paste, never races.
+sq_launch=$(shell_quote "$LAUNCH")
+printf '%s\n' "$LAUNCH" > "$TASK_TMP/launch.sh"
+spawn_send_text_line "$T" "source $TASK_TMP/launch.sh"
 
 echo "spawned $ID harness=$HARNESS kind=$KIND mode=$MODE yolo=$YOLO window=$META_WINDOW worktree=$WT"
