@@ -854,7 +854,6 @@ sleep 0.3
 # ponytail: send-keys -l types character-at-a-time and drops Enter when the
 # string contains $() special characters. Write the launch command to a temp
 # file and source it instead — zero special chars, instant paste, never races.
-sq_launch=$(shell_quote "$LAUNCH")
 printf '%s\n' "$LAUNCH" > "$TASK_TMP/launch.sh"
 spawn_send_text_line "$T" "source $TASK_TMP/launch.sh"
 
