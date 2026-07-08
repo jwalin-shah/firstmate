@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 # Scaffold a crewmate brief or persistent secondmate charter at
 # data/<task-id>/brief.md under the active firstmate home.
-# For ordinary tasks, the standard Setup/Rules/Definition-of-done contract is
-# filled in. Firstmate then replaces the {TASK} placeholder with the task
-# description, acceptance criteria, and context, and may adjust other sections
-# when the task genuinely deviates (e.g. working an existing external PR instead
-# of shipping a new one).
+#
+# For ship and scout tasks the brief now auto-fills project context from the
+# target repo's .no-mistakes.yaml (build/test commands) and AGENTS.md
+# (language, conventions, sharp edges).  Placeholders are {what} (compact
+# task spec – max 3 sentences), {acceptance}, and {constraints}; firstmate
+# fills those before spawning.
+#
 # Usage: fm-brief.sh <task-id> <repo-name> [--scout]
 #        fm-brief.sh <task-id> --secondmate <project>...
 #   --scout writes the scout contract instead: the deliverable is a report at
@@ -61,6 +63,206 @@ shell_quote() {
 
 STATUS_FILE=$(shell_quote "$STATE/$ID.status")
 
+# ---------------------------------------------------------------------------
+# Project-file readers – derive build/test/language/conventions/sharp-edges
+# from the target repo without new dependencies.
+# ---------------------------------------------------------------------------
+
+# Resolve a repo name to its on-disk project directory.  Tries FM_HOME then
+# FM_ROOT (legacy layouts).  Prints the absolute path; exits 0 iff found.
+resolve_project_dir() {
+  local repo=$1 d
+  for prefix in "$FM_HOME" "$FM_ROOT"; do
+    d="$prefix/projects/$repo"
+    [ -d "$d" ] && { echo "$d"; return 0; }
+  done
+  # The repo may be the firstmate checkout itself: FM_ROOT's basename
+  # matches the repo name AND that checkout looks like a real project dir.
+  if [ "$(basename "$FM_ROOT")" = "$repo" ] && [ -f "$FM_ROOT/.no-mistakes.yaml" ]; then
+    echo "$FM_ROOT"
+    return 0
+  fi
+  return 1
+}
+
+# Extract a top-level YAML scalar two levels deep.  Only handles the
+# commands.build / commands.test shape (a mapping whose values are scalars).
+# Prints the value stripped of quotes; exits 0 iff a non-empty value was
+# found (including an explicit empty-string value like `build: ""`).
+extract_yaml_scalar() {
+  local parent=$1 child=$2 file=$3
+  [ -f "$file" ] || return 1
+  awk -v parent="$parent" -v child="$child" '
+    $0 ~ "^[[:space:]]*" parent ":[[:space:]]*$" { in_parent=1; next }
+    in_parent && $0 ~ "^[[:space:]]+" child ":" {
+      sub(/^[[:space:]]+[^:]+:[[:space:]]*/, "")
+      # Strip surrounding quotes (single or double).
+      gsub(/^'\''|'\''$|^"|"$/, "")
+      # Preserve the rest literally (it may contain internal quotes).
+      print
+      found=1; exit
+    }
+    in_parent && /^[^[:space:]]/ { exit }
+    END { exit found ? 0 : 1 }
+  ' "$file"
+}
+
+# Extract a markdown section by heading text from AGENTS.md / CLAUDE.md.
+# Matches any heading level (## / ### / etc) whose text equals $section
+# (case-insensitive).  Returns the body until the next heading of any level
+# or EOF.  Leading/trailing blank lines are trimmed.  Exits 0 iff the
+# section exists (even if its body is empty).
+extract_md_section() {
+  local section=$1 file=$2
+  [ -f "$file" ] || return 1
+  awk -v section="$section" '
+    BEGIN { found=0 }
+    /^#/ {
+      if (found) exit
+      h = $0; sub(/^#+[[:space:]]*/, "", h)
+      if (tolower(h) == tolower(section)) { found=1; next }
+    }
+    found && /^#/ { exit }
+    found {
+      if (buf == "" && $0 ~ /^[[:space:]]*$/) next
+      buf = buf (buf == "" ? "" : "\n") $0
+    }
+    END {
+      if (found) {
+        # Trim trailing blank lines.
+        sub(/\n[[:space:]]*$/, "", buf)
+        print buf
+      } else exit 1
+    }
+  ' "$file"
+}
+
+# Find the agent-instruction file (AGENTS.md or CLAUDE.md) in a project dir.
+find_agents_md() {
+  local dir=$1
+  for f in "$dir/AGENTS.md" "$dir/CLAUDE.md"; do
+    [ -f "$f" ] && { echo "$f"; return 0; }
+  done
+  return 1
+}
+
+# Detect the project language from well-known build/config files.
+detect_language() {
+  local dir=$1
+  [ -f "$dir/go.mod" ]          && { echo "Go"; return 0; }
+  [ -f "$dir/Package.swift" ]   && { echo "Swift"; return 0; }
+  [ -f "$dir/Cargo.toml" ]      && { echo "Rust"; return 0; }
+  [ -f "$dir/package.json" ]    && { echo "TypeScript/JavaScript"; return 0; }
+  [ -f "$dir/pyproject.toml" ]  && { echo "Python"; return 0; }
+  [ -f "$dir/setup.py" ]        && { echo "Python"; return 0; }
+  [ -f "$dir/setup.cfg" ]       && { echo "Python"; return 0; }
+  [ -f "$dir/CMakeLists.txt" ]  && { echo "C/C++"; return 0; }
+  # Shell: bin/ with .sh files and no stronger signal above.
+  [ -d "$dir/bin" ] && find "$dir/bin" -maxdepth 1 -name '*.sh' 2>/dev/null | grep -q . && { echo "Shell"; return 0; }
+  # Makefile as last resort: could be anything, so note it is a guess.
+  [ -f "$dir/Makefile" ]        && { echo "(Makefile-based project — language not determined from build files)"; return 0; }
+  return 1
+}
+
+# Detect build command: .no-mistakes.yaml first, then well-known build files.
+detect_build_cmd() {
+  local dir=$1 val
+  val=$(extract_yaml_scalar commands build "$dir/.no-mistakes.yaml" 2>/dev/null || true)
+  [ -n "${val-}" ] && { echo "$val"; return 0; }
+  # Language-specific build files first (more precise), Makefile last.
+  [ -f "$dir/go.mod" ]         && { echo "go build ./..."; return 0; }
+  [ -f "$dir/Package.swift" ]  && { echo "swift build"; return 0; }
+  [ -f "$dir/Cargo.toml" ]     && { echo "cargo build"; return 0; }
+  [ -f "$dir/package.json" ]   && { echo "npm run build"; return 0; }
+  [ -f "$dir/Makefile" ]       && { echo "make"; return 0; }
+  return 1
+}
+
+# Detect test command: .no-mistakes.yaml first, then well-known build files.
+detect_test_cmd() {
+  local dir=$1 val
+  val=$(extract_yaml_scalar commands test "$dir/.no-mistakes.yaml" 2>/dev/null || true)
+  [ -n "${val-}" ] && { echo "$val"; return 0; }
+  # Language-specific build files first (more precise), Makefile last.
+  [ -f "$dir/go.mod" ]         && { echo "go test ./..."; return 0; }
+  [ -f "$dir/Package.swift" ]  && { echo "swift test"; return 0; }
+  [ -f "$dir/Cargo.toml" ]     && { echo "cargo test"; return 0; }
+  [ -f "$dir/package.json" ]   && { echo "npm test"; return 0; }
+  [ -f "$dir/Makefile" ]       && { echo "make test"; return 0; }
+  return 1
+}
+
+# Build the "## Project context" block for ship & scout briefs.
+# Prints nothing when the project directory cannot be resolved (the caller
+# will fall back to a minimal placeholder).
+build_project_context() {
+  local dir=$1 agents_file lang build_cmd test_cmd conventions sharp_edges
+  local lang_fallback build_fallback test_fallback conventions_fallback sharp_fallback
+
+  # Per-field fallback strings when detection yields nothing.
+  lang_fallback="(not detected — add a \"## Stack\" section to AGENTS.md, or a go.mod/Package.swift/Cargo.toml/package.json file)"
+  build_fallback="(not detected — add a commands.build entry to .no-mistakes.yaml, or a Makefile/go.mod/Package.swift/Cargo.toml/package.json)"
+  test_fallback="(not detected — add a commands.test entry to .no-mistakes.yaml, or a Makefile/go.mod/Package.swift/Cargo.toml/package.json)"
+  conventions_fallback="(none documented — add a \"## Conventions\" section to AGENTS.md)"
+  sharp_fallback="(none documented — add a \"## Sharp edges\" section to AGENTS.md)"
+
+  if [ -z "${dir-}" ] || [ ! -d "$dir" ]; then
+    cat <<EOF
+- Language: (project directory not found — clone the repo under projects/ first)
+- Build: $build_fallback
+- Test: $test_fallback
+- Conventions: $conventions_fallback
+- Sharp edges: $sharp_fallback
+EOF
+    return
+  fi
+
+  # --- Language: AGENTS.md §Stack, then file-based heuristic ---
+  agents_file=$(find_agents_md "$dir" 2>/dev/null || true)
+  if [ -n "${agents_file-}" ] && [ -f "${agents_file-}" ]; then
+    lang=$(extract_md_section "Stack" "$agents_file" 2>/dev/null || true)
+    [ -z "${lang-}" ] && lang=$(extract_md_section "Language" "$agents_file" 2>/dev/null || true)
+  fi
+  if [ -z "${lang-}" ]; then
+    lang=$(detect_language "$dir" 2>/dev/null || true)
+  fi
+  if [ -z "${lang-}" ]; then
+    lang="$lang_fallback"
+  fi
+
+  # --- Build command: .no-mistakes.yaml commands.build, then heuristic ---
+  build_cmd=$(detect_build_cmd "$dir" 2>/dev/null || true)
+  [ -z "${build_cmd-}" ] && build_cmd="$build_fallback"
+
+  # --- Test command: .no-mistakes.yaml commands.test, then heuristic ---
+  test_cmd=$(detect_test_cmd "$dir" 2>/dev/null || true)
+  [ -z "${test_cmd-}" ] && test_cmd="$test_fallback"
+
+  # --- Conventions: AGENTS.md §Conventions ---
+  if [ -n "${agents_file-}" ] && [ -f "${agents_file-}" ]; then
+    conventions=$(extract_md_section "Conventions" "$agents_file" 2>/dev/null || true)
+  fi
+  [ -z "${conventions-}" ] && conventions="$conventions_fallback"
+
+  # --- Sharp edges: AGENTS.md §Sharp edges (or §Sharp Edges) ---
+  if [ -n "${agents_file-}" ] && [ -f "${agents_file-}" ]; then
+    sharp_edges=$(extract_md_section "Sharp edges" "$agents_file" 2>/dev/null || true)
+    [ -z "${sharp_edges-}" ] && sharp_edges=$(extract_md_section "Sharp Edges" "$agents_file" 2>/dev/null || true)
+  fi
+  [ -z "${sharp_edges-}" ] && sharp_edges="$sharp_fallback"
+
+  cat <<EOF
+- Language: $lang
+- Build: \`$build_cmd\`
+- Test: \`$test_cmd\`
+- Conventions: $conventions
+- Sharp edges: $sharp_edges
+EOF
+}
+
+# ---------------------------------------------------------------------------
+# Secondmate charter
+# ---------------------------------------------------------------------------
 if [ "$KIND" = secondmate ]; then
 SECONDMATE_PROJECTS=""
 idx=1
@@ -69,14 +271,18 @@ while [ "$idx" -lt "${#POS[@]}" ]; do
   idx=$((idx + 1))
 done
 [ -n "$SECONDMATE_PROJECTS" ] || { echo "error: --secondmate requires at least one project" >&2; exit 1; }
-SECONDMATE_CHARTER=${FM_SECONDMATE_CHARTER:-"{TASK}"}
-SECONDMATE_SCOPE=${FM_SECONDMATE_SCOPE:-${FM_SECONDMATE_CHARTER:-"{TASK}"}}
+SECONDMATE_CHARTER=${FM_SECONDMATE_CHARTER:-"{what}"}
+SECONDMATE_SCOPE=${FM_SECONDMATE_SCOPE:-${FM_SECONDMATE_CHARTER:-"{what}"}}
 PROJECT_LIST=$(printf '%s\n' "$SECONDMATE_PROJECTS" | tr ' ' '\n' | sed 's/^/- /')
-cat > "$BRIEF" <<EOF
+cat > "$BRIEF" <<'INNEREOF'
 You are a secondmate: a persistent domain supervisor managed by the main firstmate. Work on your own; do not wait for a human.
 
 # Charter
-$SECONDMATE_CHARTER
+INNEREOF
+# Write the charter (may contain newlines) outside the heredoc so shell
+# quoting does not mangle it.
+printf '%s\n' "$SECONDMATE_CHARTER" >> "$BRIEF"
+cat >> "$BRIEF" <<EOF
 
 # Routing scope
 $SECONDMATE_SCOPE
@@ -118,8 +324,8 @@ When you have no assigned or in-flight work after that reconciliation, go idle a
 An empty queue is a healthy resting state, not a cue to invent work: never spawn a survey, audit, or any self-directed "find work" task on your own initiative.
 If this charter cannot be carried out, append \`blocked: {why}\` or \`failed: {why}\` to the main status file and stop.
 EOF
-if [ "$SECONDMATE_CHARTER" = "{TASK}" ]; then
-  echo "scaffolded: $BRIEF (secondmate charter; replace {TASK})"
+if [ "$SECONDMATE_CHARTER" = "{what}" ]; then
+  echo "scaffolded: $BRIEF (secondmate charter; replace {what})"
 else
   echo "scaffolded: $BRIEF (secondmate charter)"
 fi
@@ -128,6 +334,13 @@ fi
 
 REPO=${POS[1]}
 
+# Resolve project directory and build the project-context block.
+PROJ_DIR=$(resolve_project_dir "$REPO" 2>/dev/null || true)
+PROJECT_CONTEXT=$(build_project_context "${PROJ_DIR-}" 2>/dev/null || true)
+
+# ---------------------------------------------------------------------------
+# Scout brief
+# ---------------------------------------------------------------------------
 if [ "$KIND" = scout ]; then
 # Build available-tools section for scout briefs.
 TOOLS_SECTION=""
@@ -143,7 +356,17 @@ cat > "$BRIEF" <<EOF
 You are a crewmate: an autonomous worker agent managed by firstmate. Work on your own; do not wait for a human.
 
 # Task
-{TASK}
+## What
+{what}
+
+## Acceptance
+{acceptance}
+
+## Constraints
+{constraints}
+
+## Project context
+$PROJECT_CONTEXT
 
 # Setup
 You are in a disposable git worktree of $REPO, at a detached HEAD on a clean default branch.
@@ -173,9 +396,13 @@ The report must stand alone: what you did, what you found, the evidence (command
 When the report is complete, append \`done: {one-line conclusion}\` to the status file and stop.
 If your findings reveal work that should ship (e.g. you reproduced a bug and the fix is clear), say so in the report; firstmate may promote this task in place, and you would then receive mode-specific ship instructions as a follow-up message.
 EOF
-echo "scaffolded: $BRIEF (scout; replace {TASK})"
+echo "scaffolded: $BRIEF (scout; replace {what}, {acceptance}, {constraints})"
 exit 0
 fi
+
+# ---------------------------------------------------------------------------
+# Ship brief
+# ---------------------------------------------------------------------------
 
 # Ship task: shape Setup / Rule 1 / Definition of done by the project's delivery mode.
 # yolo does not affect the brief (it governs firstmate's approval behaviour), so discard it.
@@ -187,13 +414,13 @@ case "$MODE" in
   direct-PR)
     SETUP2=""
     RULE1='1. Never push to the default branch (push only your `fm/'"$ID"'` branch). Never merge a PR.'
-    DOD=$(cat <<EOF
+    DOD=$(cat <<'INNEREOF'
 # Definition of done
 This project ships **direct-PR**: you raise the PR yourself, without the no-mistakes pipeline.
 The task is complete only when committed on your branch.
-When it is implemented and committed, push your branch and open a PR with \`gh-axi\`, then append \`done: PR {url}\` to the status file and stop.
+When it is implemented and committed, push your branch and open a PR with `gh-axi`, then append `done: PR {url}` to the status file and stop.
 Do NOT run /no-mistakes. The captain reviews and merges the PR; firstmate relays it.
-EOF
+INNEREOF
 )
     ;;
   local-only)
@@ -213,23 +440,23 @@ EOF
     SETUP2="
 2. Run \`no-mistakes doctor\`; if it reports the repo is not initialized here, run \`no-mistakes init\`."
     RULE1='1. Never push to the default branch. Never merge a PR.'
-    DOD=$(cat <<EOF
+    DOD=$(cat <<'INNEREOF'
 # Definition of done
 The task is complete only when committed on your branch.
-When you believe it is complete, append \`done: {summary}\` to the status file and stop.
+When you believe it is complete, append `done: {summary}` to the status file and stop.
 Firstmate will then instruct you to run /no-mistakes to validate and ship a PR.
 
 You drive no-mistakes by responding to its gates, not by implementing fixes.
-Follow the guidance no-mistakes itself provides for the mechanics: it loads when you invoke /no-mistakes, and \`no-mistakes axi run --help\` plus the \`help\` lines in each \`axi\` response are authoritative and version-matched to the installed binary.
+Follow the guidance no-mistakes itself provides for the mechanics: it loads when you invoke /no-mistakes, and `no-mistakes axi run --help` plus the `help` lines in each `axi` response are authoritative and version-matched to the installed binary.
 Do not hand-edit, commit, or fix findings yourself while a run is active - the pipeline applies every fix.
 
 Two firstmate-specific rules layer on top of that guidance:
 - ask-user findings are not yours to answer: escalate to firstmate (rule 6) and stop.
-  When the decision comes back, feed it to the gate with \`no-mistakes axi respond\` and let the pipeline apply it - do not route the question to "the user" or implement the fix yourself.
-- Avoid \`--yes\`: the captain, not you, owns the ask-user decisions it would silently auto-resolve.
+  When the decision comes back, feed it to the gate with `no-mistakes axi respond` and let the pipeline apply it - do not route the question to "the user" or implement the fix yourself.
+- Avoid `--yes`: the captain, not you, owns the ask-user decisions it would silently auto-resolve.
 
-After /no-mistakes reports CI green, append \`done: PR {url} checks green\` and stop. You are finished.
-EOF
+After /no-mistakes reports CI green, append `done: PR {url} checks green` and stop. You are finished.
+INNEREOF
 )
     ;;
 esac
@@ -249,7 +476,17 @@ cat > "$BRIEF" <<EOF
 You are a crewmate: an autonomous worker agent managed by firstmate. Work on your own; do not wait for a human.
 
 # Task
-{TASK}
+## What
+{what}
+
+## Acceptance
+{acceptance}
+
+## Constraints
+{constraints}
+
+## Project context
+$PROJECT_CONTEXT
 
 # Setup
 You are in a disposable git worktree of $REPO, at a detached HEAD on a clean default branch.
@@ -284,4 +521,4 @@ Keep it proportionate: skip \`AGENTS.md\` edits for trivial tasks that produced 
 $TOOLS_SECTION
 $DOD
 EOF
-echo "scaffolded: $BRIEF (ship, mode=$MODE; replace {TASK})"
+echo "scaffolded: $BRIEF (ship, mode=$MODE; replace {what}, {acceptance}, {constraints})"
