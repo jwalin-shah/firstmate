@@ -129,6 +129,16 @@ fi
 REPO=${POS[1]}
 
 if [ "$KIND" = scout ]; then
+# Build available-tools section for scout briefs.
+TOOLS_SECTION=""
+if command -v cocoindex >/dev/null 2>&1; then
+  TOOLS_SECTION="${TOOLS_SECTION}- Query cocoindex for related code.
+"
+fi
+TOOLS_SECTION="${TOOLS_SECTION}- Query cognee for past fixes (http://localhost:8000).
+"
+TOOLS_SECTION="${TOOLS_SECTION}- Use the \`/diagnosing-bugs\` skill for systematic debugging.
+"
 cat > "$BRIEF" <<EOF
 You are a crewmate: an autonomous worker agent managed by firstmate. Work on your own; do not wait for a human.
 
@@ -155,6 +165,8 @@ The report is the only thing that survives, so anything worth keeping must be in
 6. If a decision belongs to a human (product choices, destructive actions),
    append \`needs-decision: {summary of options}\` and stop. Firstmate will reply with the decision.
 
+# Tools
+$TOOLS_SECTION
 # Definition of done
 Write your findings to \`$DATA/$ID/report.md\`.
 The report must stand alone: what you did, what you found, the evidence (commands run, output, file:line references), and what you recommend.
@@ -222,6 +234,17 @@ EOF
     ;;
 esac
 
+# Build available-tools section for ship briefs.
+TOOLS_SECTION=""
+if command -v cocoindex >/dev/null 2>&1; then
+  TOOLS_SECTION="${TOOLS_SECTION}- Query cocoindex for related code.
+"
+fi
+if command -v tldr >/dev/null 2>&1; then
+  TOOLS_SECTION="${TOOLS_SECTION}- Query \`tldr calls\` on changed functions to see callers and impact.
+"
+fi
+
 cat > "$BRIEF" <<EOF
 You are a crewmate: an autonomous worker agent managed by firstmate. Work on your own; do not wait for a human.
 
@@ -257,6 +280,8 @@ If \`AGENTS.md\` or \`CLAUDE.md\` already exists, or if this task produced durab
 If this task produced durable project-intrinsic knowledge, record it in \`AGENTS.md\` as part of your change.
 Keep it proportionate: skip \`AGENTS.md\` edits for trivial tasks that produced no durable project knowledge.
 
+# Tools
+$TOOLS_SECTION
 $DOD
 EOF
 echo "scaffolded: $BRIEF (ship, mode=$MODE; replace {TASK})"
