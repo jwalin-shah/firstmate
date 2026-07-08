@@ -852,7 +852,10 @@ fi
 spawn_send_text_line "$T" "export GOTMPDIR=$TASK_TMP/gotmp"
 sleep 0.3
 spawn_send_literal "$T" "$LAUNCH"
-sleep 0.3
+# ponytail: send-keys -l types characters one-at-a-time. Long commands with $()
+# (140+ chars) take longer than 0.3s to buffer. Enter before the buffer drains
+# = command sits unsubmitted. 2s covers any realistic launch command length.
+sleep 2
 spawn_send_key "$T" Enter
 
 echo "spawned $ID harness=$HARNESS kind=$KIND mode=$MODE yolo=$YOLO window=$META_WINDOW worktree=$WT"
