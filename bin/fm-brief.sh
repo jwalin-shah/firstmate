@@ -8,10 +8,16 @@
 # task spec – max 3 sentences), {acceptance}, and {constraints}; firstmate
 # fills those before spawning.
 #
-# Usage: fm-brief.sh <task-id> <repo-name> [--scout]
+# Usage: fm-brief.sh <task-id> <repo-name> [--scout] [--phases]
 #        fm-brief.sh <task-id> --secondmate <project>...
 #   --scout writes the scout contract instead: the deliverable is a report at
 #   data/<task-id>/report.md (no branch, no push, no PR) and the worktree is scratch.
+#   --phases writes a phased ship brief with four ordered phases (analyze →
+#   design → implement → review). Each phase has a typed output schema, a done
+#   condition, and a gate that requires firstmate approval before the next phase.
+#   The crewmate sees all phases upfront but must not proceed past a gate without
+#   approval. Phase 1 always produces structured output before any code is edited.
+#   --phases and --scout are mutually exclusive.
 #   --secondmate writes a persistent secondmate charter. The project list
 #   is cloned into the secondmate home, while the natural-language scope
 #   tells the main firstmate when to route work there; routine churn stays in its own home;
@@ -41,15 +47,22 @@ FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 KIND=ship
+PHASES=0
 POS=()
 for a in "$@"; do
   case "$a" in
     --scout) KIND=scout ;;
+    --phases) PHASES=1 ;;
     --secondmate) KIND=secondmate ;;
     *) POS+=("$a") ;;
   esac
 done
 ID=${POS[0]}
+
+# --phases is ship-only and mutually exclusive with --scout.
+if [ "$PHASES" = 1 ] && [ "$KIND" != ship ]; then
+  echo "error: --phases and --$KIND are mutually exclusive" >&2; exit 1
+fi
 
 BRIEF="$DATA/$ID/brief.md"
 [ -e "$BRIEF" ] && { echo "error: $BRIEF already exists" >&2; exit 1; }
@@ -472,7 +485,134 @@ if command -v tldr >/dev/null 2>&1; then
 "
 fi
 
-cat > "$BRIEF" <<EOF
+if [ "$PHASES" = 1 ]; then
+  # -------------------------------------------------------------------------
+  # Phased ship brief
+  # -------------------------------------------------------------------------
+  cat > "$BRIEF" <<EOF
+You are a crewmate: an autonomous worker agent managed by firstmate. Work on your own; do not wait for a human.
+
+# Task
+## What
+{what}
+
+## Acceptance
+{acceptance}
+
+## Constraints
+{constraints}
+
+## Project context
+$PROJECT_CONTEXT
+
+# Setup
+You are in a disposable git worktree of $REPO, at a detached HEAD on a clean default branch.
+
+**Verify isolation before anything else.** Run \`pwd -P\` and \`git rev-parse --show-toplevel\`; both must resolve to the disposable task worktree you were launched in, such as a treehouse pool path or an Orca-managed worktree, not the primary checkout firstmate operates from.
+The path check is authoritative: \`git rev-parse --git-dir\` and \`git rev-parse --git-common-dir\` can help inspect the repo, but they do not prove you are outside the primary checkout.
+If the top-level path is the primary checkout or not the worktree you were launched in, STOP - do not branch or commit here - append \`blocked: launched in primary checkout, not an isolated worktree\` to the status file and stop.
+
+1. First action: create your branch: \`git checkout -b fm/$ID\`$SETUP2
+
+# Rules
+$RULE1
+2. Stay inside this worktree; modify nothing outside it.
+3. Use gh-axi for GitHub operations and chrome-devtools-axi for browser operations.
+4. Report status by appending one line:
+   \`echo "{state}: {one short line}" >> $STATUS_FILE\`
+   States: working, needs-decision, blocked, done, failed.
+   Each append wakes firstmate, so report sparingly: only phase changes a supervisor
+   would act on (phase gates, setup done, validation passed) and the
+   needs-decision/blocked/done/failed states. No step-by-step FYI progress lines;
+   firstmate reads your pane for that.
+5. If you hit the same obstacle twice, append \`blocked: {why}\` and stop; firstmate will help.
+6. If a decision belongs to a human (product choices, destructive actions, ask-user findings),
+   append \`needs-decision: {summary of options}\` and stop. Firstmate will reply with the decision.
+
+# Project memory
+If \`AGENTS.md\` or \`CLAUDE.md\` already exists, or if this task produced durable project-intrinsic knowledge, run \`$FM_ROOT/bin/fm-ensure-agents-md.sh .\` in the worktree.
+If this task produced durable project-intrinsic knowledge, record it in \`AGENTS.md\` as part of your change.
+Keep it proportionate: skip \`AGENTS.md\` edits for trivial tasks that produced no durable project knowledge.
+
+# Tools
+$TOOLS_SECTION
+# Phased execution
+This is a PHASED ship task. All four phases are described below. You must complete them in order. After each phase, append a gate status and STOP — do not proceed to the next phase until firstmate explicitly approves it. Firstmate will reply with a short approval (e.g. "approved, proceed to Phase N") via the same channel you received this brief.
+
+**Phase 1 (analyze) must produce structured output before any code is edited.** You are analyzing, not building. Do not create your branch until Phase 3.
+
+## Phase 1: Analyze
+**Gate: firstmate must approve before you proceed to Phase 2.**
+
+### What to produce
+A structured analysis of the task. Read the relevant code paths, understand the current behavior, and identify what needs to change and why. Write it to \`$DATA/$ID/phase-1-analysis.md\` inside the worktree.
+
+### Output schema
+Your analysis must cover these dimensions:
+- **Scope:** what code paths, files, modules, or systems are in play — be specific (file paths, function names)
+- **Current state:** how the relevant code works today — key call chains, data flow, control flow
+- **Impact:** what will change, what depends on it, and what else might break (use \`tldr calls\` or \`tldr importers\` on affected functions if available)
+- **Risks & edge cases:** what could go wrong — concurrency, error handling, boundary conditions, backwards compatibility
+- **Unknowns:** what you need to discover or clarify before designing a solution
+
+### Done condition
+Write the completed analysis to \`$DATA/$ID/phase-1-analysis.md\`. Then append \`needs-decision: Phase 1 (analyze) complete — approve to proceed to design?\` to the status file and STOP. Do NOT create a branch, edit code, or make any commits during this phase.
+
+## Phase 2: Design
+**Gate: firstmate must approve before you proceed to Phase 3.**
+
+### What to produce
+A design document that specifies exactly what you will build. Write it to \`$DATA/$ID/phase-2-design.md\` inside the worktree.
+
+### Output schema
+Your design must cover these dimensions:
+- **Approach:** the chosen strategy and a brief rationale (why this way over alternatives)
+- **File plan:** which files will be created, modified, or deleted, and in what order
+- **Data/API changes:** new types, structs, function signatures, schema migrations, config keys
+- **Algorithm:** step-by-step logic for the core change — pseudocode or prose, whichever is clearer
+- **Test plan:** what tests to add or modify, covering happy path, edge cases, and regression risks
+
+### Done condition
+Write the completed design to \`$DATA/$ID/phase-2-design.md\`. Then append \`needs-decision: Phase 2 (design) complete — approve to proceed to implementation?\` to the status file and STOP. Do NOT create a branch, edit code, or make any commits during this phase.
+
+## Phase 3: Implement
+**Gate: firstmate must approve before you proceed to Phase 4.**
+
+### What to produce
+The code change, committed on your branch \`fm/$ID\`, following the approved design from Phase 2. Before starting this phase, create your branch with \`git checkout -b fm/$ID\`.
+
+### Output schema
+- **Commits:** one or more focused, well-described commits on the branch
+- **Build:** the project builds cleanly
+- **Tests:** tests pass (or new tests pass if you added any)
+
+### Done condition
+Implement the change, commit it, and verify the build and tests pass. Then append \`needs-decision: Phase 3 (implement) complete — approve to proceed to self-review?\` to the status file and STOP.
+
+## Phase 4: Review
+**Gate: none (this is the final phase — report \`done\` when complete).**
+
+### What to produce
+A self-review of your implementation. Write it to \`$DATA/$ID/phase-4-review.md\` inside the worktree. Check your own work against the acceptance criteria, the Phase 2 design, and the Phase 1 analysis. Catch issues before firstmate or the pipeline does.
+
+### Output schema
+Your self-review must cover:
+- **Against acceptance:** does the change satisfy every criterion from the Acceptance section above?
+- **Against design:** did you follow the Phase 2 design? Note any intentional deviations and why.
+- **Edge cases:** did you handle the risks and edge cases identified in Phase 1?
+- **Cleanup:** anything left to do, any compromises noted, any follow-up work worth filing
+
+### Done condition
+Write the completed self-review to \`$DATA/$ID/phase-4-review.md\`. Then append \`done: {summary}\` to the status file and STOP.
+
+$DOD
+EOF
+  echo "scaffolded: $BRIEF (ship, mode=$MODE, phased; replace {what}, {acceptance}, {constraints})"
+else
+  # -------------------------------------------------------------------------
+  # Standard ship brief
+  # -------------------------------------------------------------------------
+  cat > "$BRIEF" <<EOF
 You are a crewmate: an autonomous worker agent managed by firstmate. Work on your own; do not wait for a human.
 
 # Task
@@ -521,4 +661,5 @@ Keep it proportionate: skip \`AGENTS.md\` edits for trivial tasks that produced 
 $TOOLS_SECTION
 $DOD
 EOF
-echo "scaffolded: $BRIEF (ship, mode=$MODE; replace {what}, {acceptance}, {constraints})"
+  echo "scaffolded: $BRIEF (ship, mode=$MODE; replace {what}, {acceptance}, {constraints})"
+fi
