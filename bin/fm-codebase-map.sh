@@ -31,7 +31,8 @@ if len(exports) < 3:
         print("  " + (d if d!="." else ".") + "/")
         for fn in sorted(tree[d]): print("    " + fn)
     sys.exit(0)
-cap = int(os.environ.get("FM_CODEBASE_CAP","1550"))
+try: cap = int(os.environ.get("FM_CODEBASE_CAP","1550"))
+except: cap = 1550
 chars, by_pkg = 0, {}
 for pkg, fpath, symbols in exports: by_pkg.setdefault(pkg, []).append((fpath, symbols))
 for pkg in sorted(by_pkg):
