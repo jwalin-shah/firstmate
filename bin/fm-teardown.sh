@@ -101,6 +101,50 @@ remove_grok_turnend_auth() {
   rm -f "$hooks_dir/$token"
 }
 
+# Kill orphan processes from this task: processes which were children of the
+# session's agent and have since been reparented to PID 1 (launchd). These carry
+# no other signal that they belong to this task, so we match on the task key
+# (fm-<task-id>) in their command line. This cleans up leaked MCP server
+# children, subprocess shells, and other descendants that survived the pane kill.
+cleanup_task_orphans() {
+  local task_id=$1 task_key
+  task_key="fm-$task_id"
+  local orphans
+  orphans=$(ps -eo pid=,ppid=,command= 2>/dev/null | awk -v key="$task_key" \
+    'BEGIN { pat = "(^|[^A-Za-z0-9_-])" key "([^A-Za-z0-9_-]|$)" }
+     $2 == 1 && $0 ~ pat { print $1 }') || true
+  [ -n "$orphans" ] || return 0
+  printf 'cleanup: killing %d orphan process(es) for %s\n' \
+    "$(printf '%s\n' "$orphans" | wc -l | tr -d ' ')" "$task_key" >&2
+  # SIGTERM first, reap gracefully
+  # shellcheck disable=SC2086
+  kill $orphans 2>/dev/null || true
+  sleep 0.3
+  # SIGKILL any still alive
+  for pid in $orphans; do
+    kill -0 "$pid" 2>/dev/null && kill -9 "$pid" 2>/dev/null || true
+  done
+}
+
+# Remove empty treehouse scratch worktrees that have no valid git repo (leaked
+# from crashed or interrupted spawns). These have treehouse-state.json
+# referencing a worktree path that no longer contains a valid git repo. One-time
+# sweep per teardown to prevent unbounded accumulation.
+cleanup_treehouse_scratch() {
+  command -v jq >/dev/null 2>&1 || return 0
+  local treehouse_dir="$HOME/.treehouse" dir wt_path
+  [ -d "$treehouse_dir" ] || return 0
+  for dir in "$treehouse_dir"/scratch-project-*; do
+    [ -d "$dir" ] || continue
+    wt_path=$(jq -r '.worktrees[0].path // empty' "$dir/treehouse-state.json" 2>/dev/null || true)
+    if [ -n "$wt_path" ] && [ -d "$wt_path" ]; then
+      git -C "$wt_path" rev-parse --git-dir >/dev/null 2>&1 && continue
+    fi
+    rm -rf "$dir"
+    printf 'removed empty treehouse scratch worktree: %s\n' "$dir" >&2
+  done
+}
+
 # Resolve the PR number for a worktree branch via gh-axi. Echoes the number on a
 # single match and returns 0; returns non-zero on no match or any lookup failure,
 # so the caller treats it as "no PR found" (fail-safe).
@@ -679,7 +723,25 @@ if [ -d "$WT" ] && [ "$KIND" != secondmate ]; then
   ( cd "$PROJ" && treehouse return --force "$WT" )
 fi
 
+# Kill the task's process group before the runtime endpoint kill, so children
+# of the agent are reaped before they can be reparented to PID 1 (launchd).
+# SAFETY: guard against killing our own process group, the firstmate session,
+# or the tmux server (prior code killed the session it was running in).
+if [ "$BACKEND" = tmux ] && [ -n "$T" ]; then
+  self_pgid=$(ps -o pgid= -p "$$" 2>/dev/null | tr -d ' ') || self_pgid=
+  pane_pid=$(tmux list-panes -t "$T" -F '#{pane_pid}' 2>/dev/null | head -1) || true
+  if [ -n "$pane_pid" ] && [ "$pane_pid" -gt 0 ] 2>/dev/null; then
+    pgid=$(ps -o pgid= -p "$pane_pid" 2>/dev/null | tr -d ' ') || true
+    if [ -n "$pgid" ] && [ "$pgid" -gt 1 ] 2>/dev/null \
+        && [ "$pgid" != "$self_pgid" ] 2>/dev/null; then
+      kill -- -"$pgid" 2>/dev/null || true
+    fi
+  fi
+fi
 fm_backend_kill "$BACKEND" "$T" "fm-$ID" 2>/dev/null || true
+# Catch orphan processes already reparented to PID 1 (e.g. cocoindex MCP servers
+# whose parent exited before the process-group kill above).
+cleanup_task_orphans "$ID"
 if [ "$KIND" = secondmate ]; then
   [ -n "$HOME_PATH" ] || HOME_PATH=$WT
   remove_firstmate_home "$HOME_PATH" "secondmate home" "$ID"
@@ -692,8 +754,19 @@ remove_grok_turnend_auth "$STATE" "$ID"
 # Read before the state-file rm below; empty (pre-fix tasks without tasktmp=) is a no-op.
 [ -n "$TASK_TMP" ] && rm -rf "$TASK_TMP"
 rm -f "$STATE/$ID.status" "$STATE/$ID.turn-ended" "$STATE/$ID.check.sh" "$STATE/$ID.meta" "$STATE/$ID.pi-ext.ts" "$STATE/$ID.grok-turnend-token"
+# Purge per-task watcher suppression markers that accumulate unboundedly across
+# teardowns. The counter/hash/stale keys are derived from the window target the
+# same way fm-watch.sh builds them (tr ':/.' '___'), so this matches both the
+# tmux (<session>:fm-<id>) and herdr (<session>:<pane-id>) target shapes; the
+# seen markers key on the bare task ID and the heartbeat marker on the task ID.
+WKEY=$(printf '%s' "$T" | tr ':/.' '___')
+rm -f "$STATE/.count-$WKEY" "$STATE/.hash-$WKEY" "$STATE/.stale-$WKEY" "$STATE/.stale-since-$WKEY" \
+  "$STATE/.hb-surfaced-$ID"
+# shellcheck disable=SC2086
+rm -f "$STATE"/.seen-"$ID"_*
 if [ "$KIND" != scout ] && [ "$KIND" != secondmate ] && [ "$MODE" != local-only ]; then
   "$FM_ROOT/bin/fm-fleet-sync.sh" "$PROJ" || true
 fi
 echo "teardown $ID complete (window $T, worktree $WT)"
 backlog_refresh_reminder
+cleanup_treehouse_scratch
