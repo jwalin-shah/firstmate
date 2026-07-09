@@ -232,11 +232,12 @@ func discoverSessions(stateDir, filter string) []string {
 		for _, line := range strings.Split(string(data), "\n") {
 			if strings.HasPrefix(line, "window=") {
 				val := strings.TrimPrefix(line, "window=")
+				s := val
 				if colon := strings.Index(val, ":"); colon > 0 {
-					s := val[:colon]
-					if !seen[s] {
-						seen[s] = true
-					}
+					s = val[:colon]
+				}
+				if !seen[s] {
+					seen[s] = true
 				}
 		}
 		}

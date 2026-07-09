@@ -18,7 +18,7 @@ build:
 all: build
 
 lint:
-	shellcheck -x bin/*.sh
+	shellcheck -x bin/*.sh tests/*.sh
 
 fmt:
 	shfmt -i 2 -w bin/*.sh
@@ -27,11 +27,11 @@ fmt-check:
 	@if shfmt -i 2 -d bin/*.sh | grep -q .; then echo "Format issues found"; exit 1; else echo "✓ Format check passed"; fi
 
 test: build
-	rc=0
-	for t in tests/*.test.sh; do
-		echo "== $$t =="
-		bash "$$t" || rc=1
-	done
+	rc=0; \
+	for t in tests/*.test.sh; do \
+		echo "== $$t =="; \
+		bash "$$t" || rc=1; \
+	done; \
 	exit "$$rc"
 
 ci: lint fmt-check test
