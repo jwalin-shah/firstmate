@@ -359,7 +359,7 @@ test_home_seed_refuses_placeholder_charter() {
   if FM_HOME="$home" "$ROOT/bin/fm-home-seed.sh" design "$subhome" alpha >/dev/null 2>"$err"; then
     fail "seed accepted an unfilled placeholder charter"
   fi
-  grep -F 'still contains {TASK}' "$err" >/dev/null \
+  grep -F 'still contains {what}' "$err" >/dev/null \
     || fail "seed did not explain placeholder charter refusal"
   [ ! -e "$subhome" ] || fail "placeholder charter seed left a generated subhome"
   [ ! -e "$subhome/projects/alpha" ] || fail "placeholder charter seed cloned before refusing"
@@ -634,6 +634,9 @@ test_home_seed_refuses_existing_remote_backed_project_with_wrong_origin() {
   fm_git_add_origin "$home/projects/alpha" "$TMP_ROOT/remotes/wrong-alpha.git"
   git clone --quiet "$ROOT" "$subhome"
   subhome_abs=$(cd "$subhome" && pwd -P)
+  # The repo's projects/ may be a local symlink pointing outside the home;
+  # replace with a real directory to keep pre-seeded data inside the home.
+  rm -f "$subhome/projects"
   mkdir -p "$subhome/projects"
   git clone --quiet "$home/projects/alpha" "$subhome/projects/alpha"
   printf '%s\n' '- alpha [direct-PR] - alpha project (added 2026-06-22)' > "$home/data/projects.md"
@@ -685,6 +688,9 @@ test_home_seed_skips_initialized_existing_no_mistakes_projects() {
   fm_git_add_origin "$home/projects/alpha" "$TMP_ROOT/remotes/existing-alpha.git"
   fm_git_add_origin "$home/projects/beta" "$TMP_ROOT/remotes/existing-beta.git"
   git clone --quiet "$ROOT" "$subhome"
+  # The repo's projects/ may be a local symlink; replace with a real dir
+  # so pre-seeded project data stays inside the home directory.
+  rm -f "$subhome/projects"
   mkdir -p "$subhome/projects"
   origin=$(git -C "$home/projects/alpha" remote get-url origin)
   git clone --quiet "$origin" "$subhome/projects/alpha"
@@ -718,6 +724,9 @@ test_home_seed_refuses_uninitialized_existing_no_mistakes_project() {
   fm_git_init_commit "$home/projects/alpha"
   fm_git_add_origin "$home/projects/alpha" "$TMP_ROOT/remotes/uninitialized-alpha.git"
   git clone --quiet "$ROOT" "$subhome"
+  # The repo's projects/ may be a local symlink; replace with a real dir
+  # so pre-seeded project data stays inside the home directory.
+  rm -f "$subhome/projects"
   mkdir -p "$subhome/projects"
   origin=$(git -C "$home/projects/alpha" remote get-url origin)
   git clone --quiet "$origin" "$subhome/projects/alpha"

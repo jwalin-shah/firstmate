@@ -24,8 +24,25 @@ make_fake_tmux() {
 #!/usr/bin/env bash
 set -u
 case "${1:-}" in
-  has-session|new-session|new-window|send-keys|kill-window)
+  has-session|new-session|new-window|kill-window)
     printf '%s\n' "$*" >> "$FM_FAKE_TMUX_LOG"
+    exit 0
+    ;;
+  send-keys)
+    printf '%s\n' "$*" >> "$FM_FAKE_TMUX_LOG"
+    # Log the content of sourced launch files so tests can verify them.
+    for a in "$@"; do
+      case "$a" in
+        source\ */launch.sh)
+          file=${a#source }
+          if [ -f "$file" ]; then
+            cat "$file" >> "$FM_FAKE_TMUX_LOG"
+            printf '\n' >> "$FM_FAKE_TMUX_LOG"
+          fi
+          break
+          ;;
+      esac
+    done
     exit 0
     ;;
   list-windows)

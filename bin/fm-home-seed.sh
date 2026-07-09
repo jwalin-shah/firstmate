@@ -497,6 +497,19 @@ verify_firstmate_home() {
   refuse_active_home_path "$home" || return 1
   [ -f "$home/AGENTS.md" ] || { echo "error: $home is not a firstmate home (missing AGENTS.md)" >&2; return 1; }
   [ -d "$home/bin" ] || { echo "error: $home is not a firstmate home (missing bin/)" >&2; return 1; }
+  # The repo's projects/ dir may be a local symlink inherited from a git clone.
+  # Replace it with a clean empty directory inside the home so validation passes,
+  # but only when the symlink points to the same location as the source repo's
+  # own projects/ — pre-seeded homes with independent project data are left alone.
+  if [ -L "$home/projects" ]; then
+    local target fm_root_proj
+    target=$(readlink "$home/projects")
+    fm_root_proj=$(cd "$FM_ROOT/projects" && pwd -P 2>/dev/null || true)
+    if [ -n "$fm_root_proj" ] && [ "$target" = "$fm_root_proj" ]; then
+      rm -f "$home/projects"
+      mkdir -p "$home/projects"
+    fi
+  fi
   validate_operational_dirs "$home" || return 1
   printf '%s\n' "$(cd "$home" && pwd -P)"
 }
@@ -869,15 +882,15 @@ seed_home() {
 
   if [ ! -f "$SEED_PARENT_BRIEF" ]; then
     [ -n "${FM_SECONDMATE_CHARTER:-}" ] || {
-      echo "error: no filled secondmate charter brief at $SEED_PARENT_BRIEF; set FM_SECONDMATE_CHARTER or scaffold one and replace {TASK}" >&2
+      echo "error: no filled secondmate charter brief at $SEED_PARENT_BRIEF; set FM_SECONDMATE_CHARTER or scaffold one and replace {what}" >&2
       return 1
     }
     [ -d "$DATA/$id" ] || SEED_PARENT_BRIEF_DIR_CREATED=1
     "$FM_ROOT/bin/fm-brief.sh" "$id" --secondmate "$@"
     SEED_PARENT_BRIEF_CREATED=1
   fi
-  if grep -F '{TASK}' "$SEED_PARENT_BRIEF" >/dev/null 2>&1; then
-    echo "error: secondmate charter brief at $SEED_PARENT_BRIEF still contains {TASK}; fill it before seeding" >&2
+  if grep -F '{what}' "$SEED_PARENT_BRIEF" >/dev/null 2>&1; then
+    echo "error: secondmate charter brief at $SEED_PARENT_BRIEF still contains {what}; fill it before seeding" >&2
     return 1
   fi
   charter_summary=$(registry_summary_for_brief "$SEED_PARENT_BRIEF")

@@ -350,6 +350,11 @@ REPO=${POS[1]}
 # Resolve project directory and build the project-context block.
 PROJ_DIR=$(resolve_project_dir "$REPO" 2>/dev/null || true)
 PROJECT_CONTEXT=$(build_project_context "${PROJ_DIR-}" 2>/dev/null || true)
+CODEBASE_MAP=""
+if [ -n "${PROJ_DIR-}" ] && [ -d "$PROJ_DIR" ]; then
+  CODEBASE_MAP=$(FM_CODEBASE_CAP=1550 "$FM_ROOT/bin/fm-codebase-map.sh" "$PROJ_DIR" 2>/dev/null || true)
+  [ -n "$CODEBASE_MAP" ] && CODEBASE_MAP=$'\n'"## Codebase map"$'\n'"$CODEBASE_MAP"
+fi
 
 # ---------------------------------------------------------------------------
 # Scout brief
@@ -380,6 +385,7 @@ You are a crewmate: an autonomous worker agent managed by firstmate. Work on you
 
 ## Project context
 $PROJECT_CONTEXT
+$CODEBASE_MAP
 
 # Setup
 You are in a disposable git worktree of $REPO, at a detached HEAD on a clean default branch.
@@ -504,6 +510,7 @@ You are a crewmate: an autonomous worker agent managed by firstmate. Work on you
 
 ## Project context
 $PROJECT_CONTEXT
+$CODEBASE_MAP
 
 # Setup
 You are in a disposable git worktree of $REPO, at a detached HEAD on a clean default branch.
@@ -627,6 +634,7 @@ You are a crewmate: an autonomous worker agent managed by firstmate. Work on you
 
 ## Project context
 $PROJECT_CONTEXT
+$CODEBASE_MAP
 
 # Setup
 You are in a disposable git worktree of $REPO, at a detached HEAD on a clean default branch.
