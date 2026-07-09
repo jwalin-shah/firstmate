@@ -11,7 +11,9 @@
 #                 "TASKS_AXI: available", "TANGLE: <remediation>",
 #                 "SECONDMATE_SYNC: secondmate <id>: skipped: <reason>",
 #                 "NUDGE_SECONDMATES: <window-targets...>",
-#                 "FMX: X mode on ..." or "FMX: X mode off ...".
+#                 "FMX: X mode on ..." or "FMX: X mode off ...",
+#                 "fm-verify: OK" or "fm-verify: WARNINGS" (run bin/fm-verify.sh
+#                 directly for the full per-check PASS/VIOLATED report).
 #          A NUDGE_SECONDMATES line lists the RUNNING secondmate windows whose
 #          worktree was fast-forwarded to firstmate's own current default-branch
 #          commit (a purely LOCAL fast-forward, never an origin fetch) AND whose
@@ -420,6 +422,11 @@ crew=
 [ -f "$CONFIG/crew-harness" ] && crew=$(tr -d '[:space:]' < "$CONFIG/crew-harness" || true)
 [ -n "$crew" ] && [ "$crew" != "default" ] && echo "CREW_HARNESS_OVERRIDE: $crew"
 crew_dispatch_validate
+if "$SCRIPT_DIR/fm-verify.sh" >/dev/null 2>&1; then
+  echo "fm-verify: OK"
+else
+  echo "fm-verify: WARNINGS"
+fi
 if ! fm_backlog_backend_manual "$CONFIG"; then
   if fm_tasks_axi_compatible; then
     echo "TASKS_AXI: available"

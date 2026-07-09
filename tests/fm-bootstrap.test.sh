@@ -18,10 +18,14 @@ TMP_ROOT=$(fm_test_tmproot fm-bootstrap-tests)
 
 # A fake toolchain where every required tool is present and gh is authenticated.
 # treehouse's `get --help` advertises --lease only when FM_FAKE_TREEHOUSE_LEASE_HELP=1.
+# Also creates <dir>/empty-skills (an empty, hermetic FM_SKILLS_OVERRIDE target) so
+# fm-verify.sh's skill-registration check is deterministic regardless of the real
+# ~/.agents/skills on the host running these tests.
 make_fake_toolchain() {
   local dir=$1 fakebin
   fakebin=$(fm_fakebin "$dir")
-  fm_fake_exit0 "$fakebin" tmux node gh-axi chrome-devtools-axi lavish-axi
+  mkdir -p "$dir/empty-skills"
+  fm_fake_exit0 "$fakebin" tmux node gh-axi chrome-devtools-axi lavish-axi tldr ccc githits jq
   cat > "$fakebin/gh" <<'SH'
 #!/usr/bin/env bash
 if [ "${1:-}" = auth ] && [ "${2:-}" = status ]; then
@@ -99,13 +103,13 @@ test_bootstrap_reporting() {
     # FM_ROOT_OVERRIDE points the worktree-tangle check at the non-git home dir so
     # it stays inert: this suite pins tool detection, not the tangle guard, and the
     # ambient checkout (CI runs on a feature branch) must not leak a TANGLE line in.
-    out=$(PATH="$fakebin:$BASE_PATH" FM_HOME="$case_dir/home" FM_ROOT_OVERRIDE="$case_dir/home" \
+    out=$(PATH="$fakebin:$BASE_PATH" FM_HOME="$case_dir/home" FM_ROOT_OVERRIDE="$case_dir/home" FM_SKILLS_OVERRIDE="$case_dir/empty-skills" \
       FM_FAKE_TREEHOUSE_LEASE_HELP="$lease" "$ROOT/bin/fm-bootstrap.sh")
     case "$mode" in
       empty)
-        [ -z "$out" ] || fail "$label: expected silence, got: $out" ;;
+        [ "$out" = "fm-verify: OK" ] || fail "$label: expected only fm-verify: OK, got: $out" ;;
       exact)
-        [ "$out" = "$expect" ] || fail "$label: expected '$expect', got: $out" ;;
+        [ "$out" = "fm-verify: OK"$'\n'"$expect" ] || fail "$label: expected 'fm-verify: OK\\n$expect', got: $out" ;;
       grep)
         printf '%s\n' "$out" | grep -Fx "$expect" >/dev/null || fail "$label: missing '$expect' (got: $out)"
         if [ -n "$notcontains" ]; then
@@ -138,13 +142,15 @@ test_no_mistakes_min_version() {
     printf '%s\n' manual > "$case_dir/home/config/backlog-backend"
     fakebin=$(make_fake_toolchain "$case_dir")
     add_tasks_axi "$fakebin" "0.1.1"
-    out=$(PATH="$fakebin:$BASE_PATH" FM_HOME="$case_dir/home" FM_ROOT_OVERRIDE="$case_dir/home" \
+    out=$(PATH="$fakebin:$BASE_PATH" FM_HOME="$case_dir/home" FM_ROOT_OVERRIDE="$case_dir/home" FM_SKILLS_OVERRIDE="$case_dir/empty-skills" \
       FM_FAKE_TREEHOUSE_LEASE_HELP=1 FM_FAKE_NO_MISTAKES_VERSION="$version" "$ROOT/bin/fm-bootstrap.sh")
     case "$mode" in
       empty)
-        [ -z "$out" ] || fail "$label: expected silence, got: $out" ;;
+        [ "$out" = "fm-verify: OK" ] || fail "$label: expected only fm-verify: OK, got: $out" ;;
       missing)
-        [ "$out" = "$missing" ] || fail "$label: expected '$missing', got: $out" ;;
+        # no-mistakes version detection runs before the fm-verify call in
+        # fm-bootstrap.sh, so its MISSING line prints first.
+        [ "$out" = "$missing"$'\n'"fm-verify: OK" ] || fail "$label: expected '$missing\\nfm-verify: OK', got: $out" ;;
     esac
   done <<'ROWS'
 minimum no-mistakes version is accepted^no-mistakes version v1.31.2 (fake)^empty
@@ -165,10 +171,10 @@ test_crew_dispatch_active_rules_are_surfaced() {
   fakebin=$(make_fake_toolchain "$case_dir")
   add_real_jq "$fakebin"
 
-  out=$(PATH="$fakebin:$BASE_PATH" FM_HOME="$case_dir/home" FM_ROOT_OVERRIDE="$case_dir/home" \
+  out=$(PATH="$fakebin:$BASE_PATH" FM_HOME="$case_dir/home" FM_ROOT_OVERRIDE="$case_dir/home" FM_SKILLS_OVERRIDE="$case_dir/empty-skills" \
     FM_FAKE_TREEHOUSE_LEASE_HELP=1 "$ROOT/bin/fm-bootstrap.sh")
 
-  expect=$'CREW_DISPATCH: active config/crew-dispatch.json\n  rule: fresh news -> grok\n  rule: big feature -> codex/gpt-5.5/high\n  default: claude/haiku/low'
+  expect=$'CREW_DISPATCH: active config/crew-dispatch.json\n  rule: fresh news -> grok\n  rule: big feature -> codex/gpt-5.5/high\n  default: claude/haiku/low\nfm-verify: OK'
   [ "$out" = "$expect" ] || fail "active dispatch profile block mismatch"$'\n'"expected: $expect"$'\n'"actual:   $out"
   pass "bootstrap surfaces active crew-dispatch rules and default"
 }
@@ -185,17 +191,20 @@ test_crew_dispatch_validation() {
     printf '%s\n' "$body" > "$case_dir/home/config/crew-dispatch.json"
     fakebin=$(make_fake_toolchain "$case_dir")
     add_real_jq "$fakebin"
-    out=$(PATH="$fakebin:$BASE_PATH" FM_HOME="$case_dir/home" FM_ROOT_OVERRIDE="$case_dir/home" \
+    out=$(PATH="$fakebin:$BASE_PATH" FM_HOME="$case_dir/home" FM_ROOT_OVERRIDE="$case_dir/home" FM_SKILLS_OVERRIDE="$case_dir/empty-skills" \
       FM_FAKE_TREEHOUSE_LEASE_HELP=1 "$ROOT/bin/fm-bootstrap.sh")
     case "$mode" in
       empty)
-        [ -z "$out" ] || fail "$label: expected silence, got: $out" ;;
+        [ "$out" = "fm-verify: OK" ] || fail "$label: expected only fm-verify: OK, got: $out" ;;
       exact)
-        [ "$out" = "$expect" ] || fail "$label: expected '$expect', got: $out" ;;
+        # crew_dispatch_validate prints before the fm-verify call in fm-bootstrap.sh.
+        [ "$out" = "$expect"$'\n'"fm-verify: OK" ] || fail "$label: expected '$expect\\nfm-verify: OK', got: $out" ;;
+      warn-exact)
+        [ "$out" = "$expect"$'\n'"fm-verify: WARNINGS" ] || fail "$label: expected '$expect\\nfm-verify: WARNINGS', got: $out" ;;
     esac
   done <<'ROWS'
 malformed dispatch config is flagged^{"rules":[^exact^CREW_DISPATCH: invalid config/crew-dispatch.json - malformed JSON
-unverified dispatch harness is flagged^{"rules":[{"when":"anything","use":{"harness":"spaceship"}}],"default":{"harness":"codex"}}^exact^CREW_DISPATCH: invalid config/crew-dispatch.json - unverified harness: spaceship
+unverified dispatch harness is flagged^{"rules":[{"when":"anything","use":{"harness":"spaceship"}}],"default":{"harness":"codex"}}^warn-exact^CREW_DISPATCH: invalid config/crew-dispatch.json - unverified harness: spaceship
 unsupported codex max effort is flagged^{"rules":[{"when":"big feature","use":{"harness":"codex","model":"gpt-5","effort":"max"}}]}^exact^CREW_DISPATCH: invalid config/crew-dispatch.json - invalid effort: codex:max
 unsupported grok max effort is flagged^{"rules":[{"when":"deep current work","use":{"harness":"grok","model":"grok-4","effort":"max"}}]}^exact^CREW_DISPATCH: invalid config/crew-dispatch.json - invalid effort: grok:max
 unsupported opencode effort is flagged^{"rules":[{"when":"opencode work","use":{"harness":"opencode","model":"anthropic/claude-sonnet-4-5","effort":"high"}}]}^exact^CREW_DISPATCH: invalid config/crew-dispatch.json - invalid effort: opencode:high
