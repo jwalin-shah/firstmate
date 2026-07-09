@@ -16,3 +16,4 @@ config/x-mode.env
 !.cocoindex_code/settings.yml
 .tldr/
 .tldrignore
+config/cmux-socket-password
