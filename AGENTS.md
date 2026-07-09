@@ -977,3 +977,21 @@ Inspect `state/x-outbox/` to see exactly what would have gone out.
 - Bare `python3` is the CommandLineTools interpreter; for scripts needing modern Python/venv packages use `python3.14` (Homebrew) explicitly.
 
 <!-- headroom:learn:end -->
+
+## Conventions
+
+- **Test file for each `bin/` script:** a matching `tests/<script-name>.test.sh` exists. Tests run under a hermetic sandbox with mocked `fakebin/` tools (tmux, treehouse, gh-axi). Source `tests/lib.sh` for shared assertions (`assert_grep`, `assert_absent`, `expect_code`, etc.).
+- **State markers:** the watcher leaves `state/.{count,hash,seen,stale}-*` suppression markers that must be cleaned up on teardown. Marker naming: `.count-<project>_fm-<id>`, `.hash-<project>_fm-<id>`, `.seen-<id>_<type>`, `.stale-<project>_fm-<id>`.
+- **Backend abstraction:** runtime endpoints go through `bin/fm-backend.sh` (`fm_backend_kill`, `fm_backend_target`, etc.). The primary backends are `tmux` (verified reference) and `herdr` (experimental).
+- **Process cleanup:** kill children of a task's process group (`kill -- -$PGID`) before killing the runtime endpoint. Always check `$self_pgid` against the target PGID first.
+- **Meta files:** `state/<id>.meta` is the durable task record. Read with `fm_meta_get <file> <key>`, write with the `key=value` line format.
+- **All path references in scripts should be absolute** (use `pwd -P` and `cd` into dirs before resolving paths).
+
+## Sharp edges
+
+- **`kill` is a bash built-in** — a fakebin `kill` mock will NOT shadow the built-in. Test process-killing code via diagnostic stderr output or by verifying real process behavior, never via kill mocks in PATH.
+- **Process group kill (`kill -- -$PGID`) destroys the entire group.** If the PGID matches the current shell's PGID, the script kills itself and its parent session. Always guard with `[ "$pgid" != "$self_pgid" ]`.
+- **`tmux list-panes -t "$T"` fails** when the window is already gone (e.g., another process killed it). Always use `|| true` on these calls and check for empty output.
+- **`treehouse return --force` also kills processes** in the worktree before resetting it. Killing the process group of the tmux pane first prevents orphans from being reparented to PID 1.
+- **Scratch worktrees** (`~/.treehouse/scratch-project-*`) are managed by treehouse for transient tests but are NOT listed in `treehouse status`. Only the 8 numbered pool slots are tracked.
+- **`ps -eo pid=,ppid=,command=`** output format differs between macOS (BSD ps) and Linux. The command column on macOS is truncated at the process name in `ps -o comm`; use `command` (full argv) for matching.

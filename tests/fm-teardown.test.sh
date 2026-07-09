@@ -690,3 +690,140 @@ test_content_in_default_fallback_allows
 test_content_fallback_refreshes_stale_origin_ref
 test_dirty_worktree_refuses
 test_gh_error_and_content_absent_refuses
+# --- New tests for orphan cleanup, suppression markers, treehouse GC ---------
+
+# Test: suppression markers (.count-, .hash-, .seen-, .stale-) for the torn-down
+# task are purged, while markers for other tasks survive.
+test_teardown_purges_suppression_markers() {
+  local case_dir rc
+  case_dir=$(make_case sup-markers)
+  write_meta "$case_dir" local-only ship
+  # Fake watcher suppression markers for the task
+  touch "$case_dir/state/.count-0_fm-task-x1"
+  touch "$case_dir/state/.hash-0_fm-task-x1"
+  touch "$case_dir/state/.seen-task-x1_status"
+  touch "$case_dir/state/.seen-task-x1_turn-ended"
+  touch "$case_dir/state/.stale-firstmate_fm-task-x1"
+  # Markers for a different task that must NOT be removed
+  touch "$case_dir/state/.count-0_fm-other-task"
+  touch "$case_dir/state/.hash-0_fm-other-task"
+  touch "$case_dir/state/.seen-other-task_status"
+
+  set +e
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  assert_absent "$case_dir/state/.count-0_fm-task-x1" "sup-markers: .count-*_fm-task-x1 removed"
+  assert_absent "$case_dir/state/.hash-0_fm-task-x1" "sup-markers: .hash-*_fm-task-x1 removed"
+  assert_absent "$case_dir/state/.seen-task-x1_status" "sup-markers: .seen-task-x1_* removed"
+  assert_absent "$case_dir/state/.seen-task-x1_turn-ended" "sup-markers: .seen-task-x1_* removed"
+  assert_absent "$case_dir/state/.stale-firstmate_fm-task-x1" "sup-markers: .stale-*_fm-task-x1 removed"
+  assert_present "$case_dir/state/.count-0_fm-other-task" "sup-markers: other .count survives"
+  assert_present "$case_dir/state/.hash-0_fm-other-task" "sup-markers: other .hash survives"
+  assert_present "$case_dir/state/.seen-other-task_status" "sup-markers: other .seen survives"
+  pass "teardown purges suppression markers for the task only"
+}
+
+# Run teardown with a sandboxed HOME so cleanup_treehouse_scratch operates on
+# a controlled ~/.treehouse/ instead of the real one.
+run_teardown_with_home() {
+  local case_dir=$1; shift
+  HOME="$case_dir" \
+  FM_ROOT_OVERRIDE="$ROOT" \
+  FM_STATE_OVERRIDE="$case_dir/state" \
+  FM_CONFIG_OVERRIDE="$case_dir/config" \
+  PATH="$case_dir/fakebin:$PATH" \
+    "$TEARDOWN" task-x1 "$@"
+}
+
+# Test: empty treehouse scratch worktrees (no valid git repo) are cleaned up.
+# Simulates the leaked scratch-project-* dirs found in system-audit-1.
+test_teardown_cleans_empty_treehouse_scratch() {
+  local case_dir scratch_dir
+  case_dir=$(make_case treehouse-gc-empty)
+  write_meta "$case_dir" local-only ship
+
+  scratch_dir="$case_dir/.treehouse/scratch-project-dead-1"
+  mkdir -p "$scratch_dir"
+  printf '{"worktrees":[{"name":"1","path":"/nonexistent/path"}]}\n' > "$scratch_dir/treehouse-state.json"
+  touch "$scratch_dir/treehouse-state.lock"
+
+  # A completely empty skeleton dir with no state files.
+  mkdir -p "$case_dir/.treehouse/scratch-project-dead-2"
+
+  set +e
+  run_teardown_with_home "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  assert_absent "$case_dir/.treehouse/scratch-project-dead-1" "treehouse-gc-empty: dead scratch dir 1 removed"
+  assert_absent "$case_dir/.treehouse/scratch-project-dead-2" "treehouse-gc-empty: dead scratch dir 2 removed"
+  pass "teardown removes empty treehouse scratch worktrees"
+}
+
+# Test: treehouse scratch worktrees that are still valid git repos survive GC.
+test_teardown_preserves_live_treehouse_scratch() {
+  local case_dir scratch_dir wt_path
+  case_dir=$(make_case treehouse-gc-live)
+  write_meta "$case_dir" local-only ship
+
+  # Valid scratch worktree: a dir with an actual git repo inside.
+  scratch_dir="$case_dir/.treehouse/scratch-project-live-1"
+  wt_path="$scratch_dir/1/worktree"
+  mkdir -p "$wt_path"
+  git -C "$wt_path" init -q
+  printf 'root' > "$wt_path/README"
+  git -C "$wt_path" add README
+  git -C "$wt_path" -c user.name=t -c user.email=t@t commit -q -m root
+  printf '{"worktrees":[{"name":"1","path":"%s"}]}\n' "$wt_path" > "$scratch_dir/treehouse-state.json"
+  touch "$scratch_dir/treehouse-state.lock"
+  # Dead scratch dir that should be removed alongside the live one
+  mkdir -p "$case_dir/.treehouse/scratch-project-dead-1"
+
+  set +e
+  run_teardown_with_home "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  assert_present "$scratch_dir" "treehouse-gc-live: live scratch dir survives"
+  assert_absent "$case_dir/.treehouse/scratch-project-dead-1" "treehouse-gc-live: dead scratch dir removed"
+  pass "teardown preserves live treehouse scratch worktrees"
+}
+
+# Test: orphan process cleanup finds and kills PPID=1 processes matching the
+# task key.  Mocks ps to return a fake orphan; the function then calls kill
+# (a bash built-in that cannot be mocked via fakebin), so we verify the
+# diagnostic stderr line that reports the kill count.
+test_teardown_orphan_process_cleanup() {
+  local case_dir rc
+  case_dir=$(make_case orphan-cleanup)
+  write_meta "$case_dir" local-only ship
+
+  # Mock ps so cleanup_task_orphans finds two orphans matching fm-task-x1.
+  cat > "$case_dir/fakebin/ps" <<'SH'
+#!/usr/bin/env bash
+if [ "$*" = "-eo pid=,ppid=,command=" ]; then
+  printf '12345 1 some-process fm-task-x1 cocoindex-code serve\n'
+  printf '12346 1 another-process fm-task-x1 daemon\n'
+  printf '12347 1 unrelated-process not-matching\n'
+fi
+exit 0
+SH
+  chmod +x "$case_dir/fakebin/ps"
+
+  set +e
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  # The diagnostic should report 2 orphans found for fm-task-x1.
+  assert_grep 'cleanup: killing 2 orphan process(es) for fm-task-x1' "$case_dir/stderr" \
+    "orphan-cleanup: diagnostic reports 2 orphans for fm-task-x1"
+  pass "teardown finds and reports orphan processes matching the task key"
+}
+
+test_teardown_purges_suppression_markers
+test_teardown_cleans_empty_treehouse_scratch
+test_teardown_preserves_live_treehouse_scratch
+test_teardown_orphan_process_cleanup
