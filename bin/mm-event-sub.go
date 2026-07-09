@@ -118,7 +118,9 @@ func main() {
 	}
 
 	// Handshake.
-	wh("hello")
+	if err := wh("hello"); err != nil {
+		logf("wh hello: %v", err)
+	}
 	ack, err := re()
 	if err != nil || ack.Kind != "ctrl_ack" || ack.Result != "OK" {
 		if err != nil {
@@ -139,7 +141,10 @@ func main() {
 	// Subscribe every pane in each session.
 	for _, sess := range sessions {
 		logf("subscribing to session %s", sess)
-		wh("list_panes", withSession(sess))
+		if err := wh("list_panes", withSession(sess)); err != nil {
+			logf("wh list_panes: %v", err)
+			break
+		}
 		for i := 0; i < 64; i++ {
 			ev, err := re()
 		if err != nil {
@@ -155,7 +160,9 @@ func main() {
 							if pm, ok := p.(map[string]any); ok {
 								if id, ok := pm["id"].(float64); ok {
 									pid := uint64(id)
-									wh("subscribe", withPane(pid))
+									if err := wh("subscribe", withPane(pid)); err != nil {
+										logf("wh subscribe: %v", err)
+									}
 									logf("subscribed to pane %d", pid)
 								}
 							}

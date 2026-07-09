@@ -27,8 +27,6 @@ func main() {
 		fmt.Fprintf(os.Stderr, "fm-kqueue-watch: open %s: %v\n", path, err)
 		os.Exit(1)
 	}
-	defer syscall.Close(fd)
-
 	kq, err := syscall.Kqueue()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "fm-kqueue-watch: kqueue: %v\n", err)
