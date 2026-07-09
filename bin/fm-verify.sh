@@ -8,8 +8,9 @@ FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-${FM_ROOT:-$FM_ROOT}}"
 CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 
-# Source harness helpers for normalize_harness. Pass 'noop' so the case-default
-# detect_own() fires harmlessly (stdout/stderr redirected to /dev/null).
+# Source harness helpers for normalize_harness. Pass 'noop' which hits the
+# default case arm (calls detect_own()), but stdout/stderr are redirected to
+# /dev/null so the output is harmless and the functions we need are sourced.
 # shellcheck source=bin/fm-harness.sh
 . "$SCRIPT_DIR/fm-harness.sh" noop >/dev/null 2>&1
 
