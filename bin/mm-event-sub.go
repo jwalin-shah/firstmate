@@ -96,6 +96,7 @@ func main() {
 		line = append(line, '\n')
 		_, err := conn.Write(line)
 		if err != nil {
+			logf("wh %s: write error: %v", kind, err)
 			conn.Close()
 		}
 		return err
@@ -206,8 +207,8 @@ func main() {
 	case <-sig:
 		logf("shutting down")
 		wh("unsubscribe")
-		close(ec)
 		conn.Close()
+		close(ec)
 		<-done
 	case <-done:
 		close(ec)
