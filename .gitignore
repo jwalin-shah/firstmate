@@ -16,3 +16,7 @@ config/x-mode.env
 !.cocoindex_code/settings.yml
 .tldr/
 .tldrignore
+data/
+state/
+config/
+projects/
