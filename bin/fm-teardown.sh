@@ -111,7 +111,8 @@ cleanup_task_orphans() {
   task_key="fm-$task_id"
   local orphans
   orphans=$(ps -eo pid=,ppid=,command= 2>/dev/null | awk -v key="$task_key" \
-    '$2 == 1 && index($0, key) { print $1 }') || true
+    'BEGIN { pat = "(^|[^A-Za-z0-9_-])" key "([^A-Za-z0-9_-]|$)" }
+     $2 == 1 && $0 ~ pat { print $1 }') || true
   [ -n "$orphans" ] || return 0
   printf 'cleanup: killing %d orphan process(es) for %s\n' \
     "$(printf '%s\n' "$orphans" | wc -l | tr -d ' ')" "$task_key" >&2
@@ -130,6 +131,7 @@ cleanup_task_orphans() {
 # referencing a worktree path that no longer contains a valid git repo. One-time
 # sweep per teardown to prevent unbounded accumulation.
 cleanup_treehouse_scratch() {
+  command -v jq >/dev/null 2>&1 || return 0
   local treehouse_dir="$HOME/.treehouse" dir wt_path
   [ -d "$treehouse_dir" ] || return 0
   for dir in "$treehouse_dir"/scratch-project-*; do
