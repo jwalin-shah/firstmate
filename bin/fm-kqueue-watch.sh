@@ -52,9 +52,9 @@ if [ -n "$kq_bin" ]; then
   if [ "$rc" -eq 1 ] && [ ! -e "$EVENTS_FILE" ]; then
     sleep "$POLL_FALLBACK"
     if [ "$TIMEOUT" -gt 0 ] 2>/dev/null; then
-      "$kq_bin" -t "$TIMEOUT" "$EVENTS_FILE" 2>/dev/null || true
+      "$kq_bin" -t "$TIMEOUT" "$EVENTS_FILE" 2>/dev/null; rc=$?
     else
-      "$kq_bin" "$EVENTS_FILE" 2>/dev/null || true
+      "$kq_bin" "$EVENTS_FILE" 2>/dev/null; rc=$?
     fi
   fi
   exit "$rc"

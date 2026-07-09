@@ -26,7 +26,7 @@ fmt:
 fmt-check:
 	@if shfmt -i 2 -d bin/*.sh | grep -q .; then echo "Format issues found"; exit 1; else echo "✓ Format check passed"; fi
 
-test:
+test: build
 	rc=0
 	for t in tests/*.test.sh; do
 		echo "== $$t =="

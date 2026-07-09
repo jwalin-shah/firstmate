@@ -95,6 +95,9 @@ func main() {
 		line, _ := json.Marshal(c)
 		line = append(line, '\n')
 		_, err := conn.Write(line)
+		if err != nil {
+			conn.Close()
+		}
 		return err
 	}
 	withSession := func(s string) func(*Cmd) { return func(c *Cmd) { c.Session = s } }
@@ -103,13 +106,13 @@ func main() {
 	re := func() (*Event, error) {
 		for {
 			line, err := br.ReadBytes('\n')
-			if err != nil {
+		if err != nil {
 				return nil, err
-			}
+		}
 			var ev Event
 			if err := json.Unmarshal(line, &ev); err != nil {
 				continue
-			}
+		}
 			return &ev, nil
 		}
 	}
@@ -139,12 +142,12 @@ func main() {
 		wh("list_panes", withSession(sess))
 		for i := 0; i < 64; i++ {
 			ev, err := re()
-			if err != nil {
+		if err != nil {
 				break
-			}
+		}
 			if ev.Kind == "ctrl_ack" {
 				break
-			}
+		}
 			if ev.Kind == "meta" && ev.Meta != nil {
 				if mm, ok := ev.Meta.(map[string]any); ok {
 					if raw, ok := mm["panes"].([]any); ok {
@@ -159,7 +162,7 @@ func main() {
 						}
 					}
 				}
-			}
+		}
 		}
 	}
 
@@ -178,15 +181,15 @@ func main() {
 		defer close(done)
 		for {
 			ev, err := re()
-			if err != nil {
+		if err != nil {
 				if err != io.EOF {
 					logf("read error: %v", err)
 				}
 				return
-			}
+		}
 			if oe := classify(ev); oe != nil {
 				ec <- *oe
-			}
+		}
 		}
 	}()
 
@@ -210,6 +213,7 @@ func discoverSessions(stateDir, filter string) []string {
 	seen := make(map[string]bool)
 	entries, err := os.ReadDir(stateDir)
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "mm-event-sub: reading state directory %s: %v\n", stateDir, err)
 		return nil
 	}
 	for _, e := range entries {
@@ -226,7 +230,7 @@ func discoverSessions(stateDir, filter string) []string {
 						seen[s] = true
 					}
 				}
-			}
+		}
 		}
 	}
 	var r []string
