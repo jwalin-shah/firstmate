@@ -200,6 +200,7 @@ func main() {
 		logf("shutting down")
 		wh("unsubscribe")
 		close(ec)
+		conn.Close()
 		<-done
 	case <-done:
 		close(ec)
