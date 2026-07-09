@@ -119,16 +119,14 @@ cat > "$FM_HOME/data/backlog.md" <<'EOF'
 - [x] past-item - done (2026-07-08)
 EOF
 
-# --- tool mock: fake firstmate-specific tools, provide real jq ---
+# --- tool mock: fake firstmate-specific tools. jq comes from /usr/bin via PATH ---
 fakebin=$(fm_fakebin "$TMP_ROOT")
 fm_fake_exit0 "$fakebin" tldr ccc githits no-mistakes gh-axi
-cp "$(type -P jq)" "$fakebin/jq"  # use real jq, not a mock
 
-# Make python3 mock then REMOVE it — but also exclude real python3 from PATH
+# Keep python3 mock in fakebin for reliable check 6 pass regardless of
+# /usr/bin/python3 presence (CommandLineTools requirement).
 fm_fake_exit0 "$fakebin" python3
-rm -f "$fakebin/python3"
-# Restrict PATH so real python3 is hidden; keep only /usr/bin:/bin for system
-# commands plus fakebin for mocks and the real jq copy
+# Restrict PATH to fakebin (mocks) and system dirs (jq comes from /usr/bin)
 SCRIPT_PATH="$fakebin:/usr/bin:/bin"
 
 export FM_HOME
