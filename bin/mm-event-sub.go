@@ -208,8 +208,8 @@ func main() {
 		logf("shutting down")
 		wh("unsubscribe")
 		conn.Close()
-		close(ec)
 		<-done
+		close(ec)
 	case <-done:
 		close(ec)
 	}
