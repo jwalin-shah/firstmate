@@ -193,7 +193,7 @@ FIRSTMATE_HOME=
 
 if [ "$KIND" = secondmate ]; then
   case "${POS[1]:-}" in
-    ''|claude|ct|agy|cursor|codex|opencode|pi|grok)
+    ''|claude|ca|ct|agy|cursor|codex|opencode|pi|grok)
       ARG3=${POS[1]:-}
       ;;
     *' '*)
@@ -230,7 +230,7 @@ launch_template() {
     # does NOT suppress the interactive ghost text (verified empirically), so the env
     # var is the correct control. The dim-aware composer reader in fm-tmux-lib.sh is
     # the defense-in-depth backstop for any pane this flag cannot reach.
-    claude) printf '%s' 'CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false claude --permission-mode auto __MODELFLAG____EFFORTFLAG__"$(cat __BRIEF__)"' ;;
+    claude|ca) printf '%s' 'CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false '"${harness}"' --permission-mode auto __MODELFLAG____EFFORTFLAG__"$(cat __BRIEF__)"' ;;
     ct) printf '%s' 'CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false ct __MODELFLAG____EFFORTFLAG__"$(cat __BRIEF__)"' ;;
     agy) printf '%s' 'agy --dangerously-skip-permissions __MODELFLAG____EFFORTFLAG__"$(cat __BRIEF__)"' ;;
     cursor) printf '%s' 'cursor agent --force __MODELFLAG____EFFORTFLAG__"$(cat __BRIEF__)"' ;;
