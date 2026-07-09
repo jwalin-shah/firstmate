@@ -432,6 +432,18 @@ case "${1:-}" in
         if [ "$prev" = "-l" ]; then
           printf '%s\n' "$a" >> "$FM_FAKE_LAUNCH_LOG"
         fi
+        # The launch command is now written to a file and sourced;
+        # cat the file content so the launch log still captures it.
+        case "$a" in
+          source\ */launch.sh)
+            file=${a#source }
+            if [ -f "$file" ]; then
+              cat "$file" >> "$FM_FAKE_LAUNCH_LOG"
+              printf '\n' >> "$FM_FAKE_LAUNCH_LOG"
+            fi
+            break
+            ;;
+        esac
         prev=$a
       done
     fi
@@ -590,7 +602,7 @@ test_spawn_explicit_harness_does_not_inherit_secondmate_harness_tokens() {
   [ "$(meta_field "$meta" model)" = default ] || fail "explicit-harness-no-tokens: meta model should stay default"
   [ "$(meta_field "$meta" effort)" = default ] || fail "explicit-harness-no-tokens: meta effort should stay default"
   launch=$(cat "$launchlog")
-  assert_contains "$launch" "codex --dangerously-bypass-approvals-and-sandbox" \
+  assert_contains "$launch" "codex -a on-request -s danger-full-access" \
     "explicit-harness-no-tokens: launch did not use codex"
   assert_not_contains "$launch" "--model" "explicit-harness-no-tokens: launch must not carry a --model flag"
   assert_not_contains "$launch" "model_reasoning_effort" \
