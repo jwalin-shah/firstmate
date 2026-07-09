@@ -176,6 +176,7 @@ print_file_or_absent "$DATA/projects.md" "data/projects.md"
 print_file_or_absent "$DATA/secondmates.md" "data/secondmates.md"
 print_file_or_absent "$DATA/captain.md" "data/captain.md"
 print_file_or_absent "$DATA/learnings.md" "data/learnings.md"
+print_file_or_absent "$HOME/Notes/todo.txt" "captain's Master Plan (~/Notes/todo.txt)"
 
 # --- 5. fleet-state digest ---------------------------------------------
 section "FLEET STATE"

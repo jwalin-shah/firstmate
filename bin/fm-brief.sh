@@ -363,7 +363,7 @@ if command -v cocoindex >/dev/null 2>&1; then
 fi
 TOOLS_SECTION="${TOOLS_SECTION}- Query cognee for past fixes (http://localhost:8000).
 "
-TOOLS_SECTION="${TOOLS_SECTION}- Use the \`/diagnosing-bugs\` skill for systematic debugging.
+TOOLS_SECTION="${TOOLS_SECTION}- Use the \`/diagnose\` skill for systematic debugging.
 "
 cat > "$BRIEF" <<EOF
 You are a crewmate: an autonomous worker agent managed by firstmate. Work on your own; do not wait for a human.
