@@ -119,14 +119,25 @@ cat > "$FM_HOME/data/backlog.md" <<'EOF'
 - [x] past-item - done (2026-07-08)
 EOF
 
-# --- tool mock: fake firstmate-specific tools. jq comes from /usr/bin via PATH ---
+# --- tool mock: fake firstmate-specific tools ---
 fakebin=$(fm_fakebin "$TMP_ROOT")
 fm_fake_exit0 "$fakebin" tldr ccc githits no-mistakes gh-axi
 
 # Keep python3 mock in fakebin for reliable check 6 pass regardless of
 # /usr/bin/python3 presence (CommandLineTools requirement).
 fm_fake_exit0 "$fakebin" python3
-# Restrict PATH to fakebin (mocks) and system dirs (jq comes from /usr/bin)
+# Create a jq stub so check 2 can parse crew-dispatch.json regardless of
+# Homebrew install location (not in /usr/bin on Apple Silicon).
+# Using grep/sed instead of copying the real binary — Apple-signed /usr/bin/jq
+# has path-based validation that prevents it from running when copied elsewhere.
+cat > "$fakebin/jq" <<'JQSTUB'
+#!/usr/bin/env bash
+exec grep -o '"harness": "[^"]*"' "${@: -1}" | sed 's/"harness": "//; s/"$//'
+JQSTUB
+chmod +x "$fakebin/jq"
+# Restrict PATH to fakebin (mocks) so test is hermetic and not dependent on
+# system tool locations (Homebrew on Apple Silicon puts tools at
+# /opt/homebrew/bin, not /usr/bin).
 SCRIPT_PATH="$fakebin:/usr/bin:/bin"
 
 export FM_HOME
