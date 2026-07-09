@@ -172,6 +172,20 @@ In dry-run, `fm-x-dismiss.sh` records `{request_id, endpoint:"dismiss"}` to the 
 The live answer and follow-up bodies intentionally stay the same shape, including optional `image`; the relay distinguishes them by endpoint, and dismiss stays `{request_id}`.
 These paths need `jq` to build the JSON payload, but they run before token and network checks, so they need neither `FMX_PAIRING_TOKEN` nor `curl`.
 
+## Kqueue mode (optional event-driven watcher)
+
+The watcher supports an optional kqueue mode (`FM_WATCH_MODE=kqueue`) that replaces the default polling sleep with a block on `state/events.jsonl` writes via macOS `NOTE_WRITE`, making the watcher respond to pane activity instantly.
+
+A companion daemon `mm-watch.sh` subscribes to mintmux pane events through the Go helper `mm-event-sub` and writes them as JSONL to `state/events.jsonl`.
+The daemon auto-restarts the subscriber with exponential backoff if it dies.
+
+When kqueue mode is active, `fm-kqueue-watch.sh` blocks on writes to the events file using the compiled Go binary `fm-kqueue-watch`, falling back to periodic `stat`-based mtime polling when the binary is unavailable.
+The timeout ensures that check scans, merge polls, and heartbeats still run on schedule.
+
+To enable kqueue mode, compile the Go helpers with `make build` and set `FM_WATCH_MODE=kqueue` when arming the watcher.
+Poll mode remains the default.
+Kqueue mode requires macOS, a running mintmux daemon, and the compiled Go binaries.
+
 ## Environment variables
 
 Runtime tuning via environment variables (defaults shown):
@@ -191,6 +205,8 @@ FM_SESSION_START_STATUS_TAIL=5   # state/*.status lines printed per task in the 
 FM_BOOTSTRAP_DETECT_ONLY=0   # internal/read-only session-start mode: skip bootstrap's mutating sweeps and print advisory TANGLE wording
 FM_GUARD_READ_ONLY=0    # internal/read-only guard mode: keep alarms but suppress drain, arm, and checkout repair commands
 FM_POLL=15              # seconds between watcher poll cycles
+FM_WATCH_MODE=poll       # watcher mode: poll or kqueue; kqueue uses file events via state/events.jsonl
+FM_KQUEUE_POLL=5         # fallback polling interval (seconds) when fm-kqueue-watch binary is unavailable
 FM_HEARTBEAT=600        # base seconds between heartbeat scans; no-change heartbeats are absorbed while idle
 FM_HEARTBEAT_MAX=7200   # heartbeat backoff cap
 FM_CHECK_INTERVAL=300   # seconds between slow checks (merge polls or the X-mode poll shim)
@@ -218,6 +234,8 @@ FM_FLEET_PRUNE=1        # set to 0 to skip pruning local branches whose upstream
 FM_BUSY_REGEX='esc (to )?interrupt|Working\.\.\.|Ctrl\+c:cancel'   # busy-pane signatures, shared by watcher, fm-crew-state pane fallback, and tmux helper
 FM_COMPOSER_IDLE_RE=    # optional empty-composer regex, applied after dim-ghost and border stripping
 GROK_HOME=              # optional Grok config home for firstmate's global grok turn-end hook; defaults to ~/.grok
+MM_SOCK=                # mintmux Unix socket path (default: ~/.cache/mintmux/mintmux-<uid>.sock); used by mm-event-sub and mm-watch.sh
+MM_SESSION=             # optional session filter for mm-event-sub; when unset, discovers sessions from state/*.meta files
 FM_SEND_RETRIES=3       # fm-send Enter-retry attempts after typing the line once
 FM_SEND_SLEEP=0.4       # seconds between fm-send submit checks
 FM_SEND_SETTLE=1        # seconds fm-send waits after a successful text submit; 0 disables

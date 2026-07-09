@@ -18,6 +18,16 @@ No-change heartbeats are also benign.
 Absorbed wakes advance their suppression markers, log to `state/.watch-triage.log`, and keep the watcher blocking without a queue record or LLM turn.
 After each drain, `fm-wake-drain.sh` runs the same liveness guard as the supervision scripts, so a lapsed watcher chain surfaces even on a turn that only drains and handles queued wakes.
 Routine watcher polling, re-arm no-ops, elapsed waiting time, and absorbed benign wakes stay silent; an idle crew costs you nothing.
+
+### Kqueue mode: event-driven wake instead of polling
+
+By default the watcher polls every `FM_POLL` seconds. An optional kqueue mode (`FM_WATCH_MODE=kqueue`) replaces that sleep with an event-driven block on `state/events.jsonl` writes via macOS kqueue `NOTE_WRITE`, making the watcher respond to activity instantly instead of waiting out the poll interval.
+
+A companion daemon (`mm-watch.sh`) subscribes to mintmux pane events through the Go helper `mm-event-sub.go`, which connects to the mintmux Unix socket, discovers firstmate sessions from `state/*.meta` files, subscribes to every pane it finds, and writes one JSONL line per mintmux server event (`{"ts","pane_id","event_type","summary"}`) to `state/events.jsonl`. The daemon auto-restarts the subscriber with exponential backoff if it dies.
+
+In the watcher loop, `fm-kqueue-watch.sh` blocks on that JSONL file using the compiled Go binary `fm-kqueue-watch`, which re-opens the file on truncation and exits 0 on write, 2 on timeout. When the binary is unavailable (or on non-macOS platforms without kqueue), the script falls back to polling the file's mtime via `stat`. The timeout ensures that check scans, merge polls, and heartbeats still run on schedule.
+
+Poll mode remains the default. Kqueue mode requires macOS, a running mintmux daemon, and the compiled Go helpers (`make build`).
 Crew status files are append-only wake-event logs, not current-state fields.
 `bin/fm-crew-state.sh <id>` is the cheap current-state read for an actionable heartbeat review: it attributes the matching no-mistakes run, active or terminal, to the crew's own branch and keeps that run-step authoritative even if the pane has closed.
 Only when no matching run exists does it fall back to the pane busy-signature and then the status log; a dead pane without a run reports unknown instead of trusting a stale log.
