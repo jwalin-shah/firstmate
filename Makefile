@@ -34,6 +34,6 @@ test: build
 	done
 	exit "$$rc"
 
-ci: lint fmt-check build test
+ci: lint fmt-check test
 
 .DEFAULT_GOAL := all

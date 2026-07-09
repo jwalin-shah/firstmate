@@ -78,9 +78,10 @@ func main() {
 		}
 		// Read new data.
 		var buf [4096]byte
-		nr, _ := syscall.Read(fd, buf[:])
-		if nr > 0 {
-			os.Stdout.Write(buf[:nr])
+		_, err = syscall.Read(fd, buf[:])
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "fm-kqueue-watch: read: %v\n", err)
+			os.Exit(1)
 		}
 		os.Exit(0)
 	}
