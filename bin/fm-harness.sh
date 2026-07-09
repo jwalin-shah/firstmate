@@ -130,7 +130,7 @@ secondmate_field() {
 resolve_secondmate() {
   local sm
   sm=$(secondmate_field 1)
-  if [ -z "$sm" ] || [ "$sm" = "default" ]; then resolve_crew; else echo "$sm"; fi
+  if [ -z "$sm" ] || [ "$sm" = "default" ]; then resolve_crew; else normalize_harness "$sm"; fi
 }
 
 # Print the optional model token (2nd field) from config/secondmate-harness, or
