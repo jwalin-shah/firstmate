@@ -754,11 +754,16 @@ remove_grok_turnend_auth "$STATE" "$ID"
 # Read before the state-file rm below; empty (pre-fix tasks without tasktmp=) is a no-op.
 [ -n "$TASK_TMP" ] && rm -rf "$TASK_TMP"
 rm -f "$STATE/$ID.status" "$STATE/$ID.turn-ended" "$STATE/$ID.check.sh" "$STATE/$ID.meta" "$STATE/$ID.pi-ext.ts" "$STATE/$ID.grok-turnend-token"
-# Purge per-task watcher suppression markers (.count-, .hash-, .seen-, .stale-)
-# that accumulate unboundedly across teardowns.  Matching on the window name
-# (fm-<id>) for counter/hash/stale and bare task ID for seen markers.
+# Purge per-task watcher suppression markers that accumulate unboundedly across
+# teardowns. The counter/hash/stale keys are derived from the window target the
+# same way fm-watch.sh builds them (tr ':/.' '___'), so this matches both the
+# tmux (<session>:fm-<id>) and herdr (<session>:<pane-id>) target shapes; the
+# seen markers key on the bare task ID and the heartbeat marker on the task ID.
+WKEY=$(printf '%s' "$T" | tr ':/.' '___')
+rm -f "$STATE/.count-$WKEY" "$STATE/.hash-$WKEY" "$STATE/.stale-$WKEY" "$STATE/.stale-since-$WKEY" \
+  "$STATE/.hb-surfaced-$ID"
 # shellcheck disable=SC2086
-rm -f "$STATE"/.count-*_fm-"$ID" "$STATE"/.hash-*_fm-"$ID" "$STATE"/.seen-"$ID"_* "$STATE"/.stale-*_fm-"$ID"
+rm -f "$STATE"/.seen-"$ID"_*
 if [ "$KIND" != scout ] && [ "$KIND" != secondmate ] && [ "$MODE" != local-only ]; then
   "$FM_ROOT/bin/fm-fleet-sync.sh" "$PROJ" || true
 fi

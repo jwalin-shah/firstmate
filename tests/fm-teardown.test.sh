@@ -698,31 +698,70 @@ test_teardown_purges_suppression_markers() {
   local case_dir rc
   case_dir=$(make_case sup-markers)
   write_meta "$case_dir" local-only ship
-  # Fake watcher suppression markers for the task
-  touch "$case_dir/state/.count-0_fm-task-x1"
-  touch "$case_dir/state/.hash-0_fm-task-x1"
+  # Watcher keys the count/hash/stale markers on the recorded window target run
+  # through `tr ':/.' '___'`; write_meta records window=fm-task-x1, so the key is
+  # fm-task-x1.
+  touch "$case_dir/state/.count-fm-task-x1"
+  touch "$case_dir/state/.hash-fm-task-x1"
+  touch "$case_dir/state/.stale-fm-task-x1"
+  touch "$case_dir/state/.stale-since-fm-task-x1"
   touch "$case_dir/state/.seen-task-x1_status"
   touch "$case_dir/state/.seen-task-x1_turn-ended"
-  touch "$case_dir/state/.stale-firstmate_fm-task-x1"
+  touch "$case_dir/state/.hb-surfaced-task-x1"
   # Markers for a different task that must NOT be removed
-  touch "$case_dir/state/.count-0_fm-other-task"
-  touch "$case_dir/state/.hash-0_fm-other-task"
+  touch "$case_dir/state/.count-fm-other-task"
+  touch "$case_dir/state/.hash-fm-other-task"
+  touch "$case_dir/state/.stale-since-fm-other-task"
   touch "$case_dir/state/.seen-other-task_status"
+  touch "$case_dir/state/.hb-surfaced-other-task"
 
   set +e
   run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
   rc=$?
   set -e
 
-  assert_absent "$case_dir/state/.count-0_fm-task-x1" "sup-markers: .count-*_fm-task-x1 removed"
-  assert_absent "$case_dir/state/.hash-0_fm-task-x1" "sup-markers: .hash-*_fm-task-x1 removed"
+  assert_absent "$case_dir/state/.count-fm-task-x1" "sup-markers: .count removed"
+  assert_absent "$case_dir/state/.hash-fm-task-x1" "sup-markers: .hash removed"
+  assert_absent "$case_dir/state/.stale-fm-task-x1" "sup-markers: .stale removed"
+  assert_absent "$case_dir/state/.stale-since-fm-task-x1" "sup-markers: .stale-since removed"
   assert_absent "$case_dir/state/.seen-task-x1_status" "sup-markers: .seen-task-x1_* removed"
   assert_absent "$case_dir/state/.seen-task-x1_turn-ended" "sup-markers: .seen-task-x1_* removed"
-  assert_absent "$case_dir/state/.stale-firstmate_fm-task-x1" "sup-markers: .stale-*_fm-task-x1 removed"
-  assert_present "$case_dir/state/.count-0_fm-other-task" "sup-markers: other .count survives"
-  assert_present "$case_dir/state/.hash-0_fm-other-task" "sup-markers: other .hash survives"
+  assert_absent "$case_dir/state/.hb-surfaced-task-x1" "sup-markers: .hb-surfaced removed"
+  assert_present "$case_dir/state/.count-fm-other-task" "sup-markers: other .count survives"
+  assert_present "$case_dir/state/.hash-fm-other-task" "sup-markers: other .hash survives"
+  assert_present "$case_dir/state/.stale-since-fm-other-task" "sup-markers: other .stale-since survives"
   assert_present "$case_dir/state/.seen-other-task_status" "sup-markers: other .seen survives"
+  assert_present "$case_dir/state/.hb-surfaced-other-task" "sup-markers: other .hb-surfaced survives"
   pass "teardown purges suppression markers for the task only"
+}
+
+# Test: a herdr-backed task records window=<session>:<pane-id>, so its markers
+# key on the whole target (tr ':/.' '___'). Teardown must purge those too.
+test_teardown_purges_herdr_suppression_markers() {
+  local case_dir rc
+  case_dir=$(make_case sup-markers-herdr)
+  fm_write_meta "$case_dir/state/task-x1.meta" \
+    "window=myses:%3" \
+    "worktree=$case_dir/wt" \
+    "project=$case_dir/project" \
+    "kind=ship" \
+    "mode=local-only" \
+    "backend=herdr"
+  touch "$case_dir/state/.count-myses_%3"
+  touch "$case_dir/state/.hash-myses_%3"
+  touch "$case_dir/state/.stale-myses_%3"
+  touch "$case_dir/state/.stale-since-myses_%3"
+
+  set +e
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  assert_absent "$case_dir/state/.count-myses_%3" "herdr-markers: .count removed"
+  assert_absent "$case_dir/state/.hash-myses_%3" "herdr-markers: .hash removed"
+  assert_absent "$case_dir/state/.stale-myses_%3" "herdr-markers: .stale removed"
+  assert_absent "$case_dir/state/.stale-since-myses_%3" "herdr-markers: .stale-since removed"
+  pass "teardown purges herdr-target suppression markers"
 }
 
 # Run teardown with a sandboxed HOME so cleanup_treehouse_scratch operates on
@@ -824,6 +863,7 @@ SH
 }
 
 test_teardown_purges_suppression_markers
+test_teardown_purges_herdr_suppression_markers
 test_teardown_cleans_empty_treehouse_scratch
 test_teardown_preserves_live_treehouse_scratch
 test_teardown_orphan_process_cleanup
