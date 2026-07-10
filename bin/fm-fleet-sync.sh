@@ -7,7 +7,8 @@
 # no unique commits (it is an ancestor of origin/<default>) and whose <default>
 # branch is free to check out is re-attached and then fast-forwarded ("recovered:").
 # Every other off-default state - a non-default named branch, a detached HEAD with
-# unique commits, a dirty tree, or a diverged default - may hold real work, so it
+# unique commits, a dirty tree (tracked-file changes only; untracked scratch files are
+# ignored), or a diverged default - may hold real work, so it
 # is left untouched and reported as a quantified, loud "STUCK: ... N commits behind
 # ... - needs attention" warning rather than a quiet drift. Nothing is ever forced,
 # stashed, or discarded.
