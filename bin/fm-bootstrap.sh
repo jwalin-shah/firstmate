@@ -442,5 +442,9 @@ if [ "${FM_BOOTSTRAP_DETECT_ONLY:-0}" != 1 ]; then
   secondmate_sync
   x_mode_setup
   fleet_sync
+
+  if ! pgrep -f "bin/fm-watchdog.sh" >/dev/null; then
+    "$FM_ROOT/bin/fm-watchdog.sh" </dev/null >/dev/null 2>&1 &
+  fi
 fi
 exit 0
