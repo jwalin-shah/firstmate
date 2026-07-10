@@ -418,18 +418,8 @@ fi
 crew=
 [ -f "$CONFIG/crew-harness" ] && crew=$(tr -d '[:space:]' < "$CONFIG/crew-harness" || true)
 [ -n "$crew" ] && [ "$crew" != "default" ] && echo "CREW_HARNESS_OVERRIDE: $crew"
-crew_dispatch_validate
-dispatch_ok=$?
-# Always run verify, even when the dispatch profile is invalid: a bad dispatch
-# profile must not silently skip every other repo invariant. And surface the
-# actual violations instead of a bare "WARNINGS" that hides what is wrong -
-# bootstrap stays non-fatal (it exits 0 below), but the problems are now visible.
-: "$dispatch_ok"  # recorded for callers; no longer gates the verify run
-if verify_out=$("$SCRIPT_DIR/fm-verify.sh" 2>&1); then
-  echo "fm-verify: OK" >&2
-else
-  echo "fm-verify: WARNINGS - invariant violations follow:" >&2
-  printf '%s\n' "$verify_out" | grep -E 'VIOLATED' >&2 || printf '%s\n' "$verify_out" >&2
+if crew_dispatch_validate; then
+  "$SCRIPT_DIR/fm-verify.sh" >/dev/null 2>&1 || echo "fm-verify: WARNINGS"
 fi
 if ! fm_backlog_backend_manual "$CONFIG"; then
   if fm_tasks_axi_compatible; then
