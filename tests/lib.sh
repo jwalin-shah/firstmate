@@ -30,6 +30,13 @@ FM_TEST_LIB_SOURCED=1
 # shellcheck disable=SC2034
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
+# Sandbox the event bus for every test. Emitters (fm-events, fm-spawn,
+# fm-teardown, fm-status-bridge) honor FM_EVENTS_FILE; defaulting it here to a
+# per-process temp file means no test ever appends to the captain's real
+# ~/.local/share/jw/events.jsonl, even one that forgets to sandbox HOME.
+: "${FM_EVENTS_FILE:=${TMPDIR:-/tmp}/fm-test-events.$$.jsonl}"
+export FM_EVENTS_FILE
+
 # --- reporters --------------------------------------------------------------
 
 fail() {
