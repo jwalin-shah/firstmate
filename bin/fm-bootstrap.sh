@@ -322,11 +322,11 @@ crew_dispatch_validate() {
   [ -f "$file" ] || return 0
   if ! command -v jq >/dev/null 2>&1; then
     echo "MISSING: jq (install: $(install_cmd jq))"
-    return 0
+    return 1
   fi
   if ! jq -e . "$file" >/dev/null 2>&1; then
     echo "CREW_DISPATCH: invalid config/crew-dispatch.json - malformed JSON"
-    return 0
+    return 1
   fi
   err=$(jq -r '
     def verified($h): ["claude","ca","ct","agy","cursor","codex","opencode","pi","grok"] | index($h);
@@ -366,7 +366,7 @@ crew_dispatch_validate() {
   ' "$file" 2>/dev/null || true)
   if [ -n "$err" ]; then
     echo "CREW_DISPATCH: invalid config/crew-dispatch.json - $err"
-    return 0
+    return 1
   fi
   jq -r '
     def profile($p):
@@ -420,9 +420,8 @@ crew=
 [ -f "$CONFIG/crew-harness" ] && crew=$(tr -d '[:space:]' < "$CONFIG/crew-harness" || true)
 [ -n "$crew" ] && [ "$crew" != "default" ] && echo "CREW_HARNESS_OVERRIDE: $crew"
 crew_dispatch_validate
-if "$SCRIPT_DIR/fm-verify.sh" >/dev/null 2>&1; then
-  echo "fm-verify: OK"
-else
+dispatch_ok=$?
+if [ "$dispatch_ok" -eq 0 ] && ! "$SCRIPT_DIR/fm-verify.sh" >/dev/null 2>&1; then
   echo "fm-verify: WARNINGS"
 fi
 if ! fm_backlog_backend_manual "$CONFIG"; then
