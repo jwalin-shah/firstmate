@@ -39,6 +39,8 @@ Its `--restart` mode signals only the watcher recorded in the current home's `st
 A pull-based guard (`bin/fm-guard.sh`) warns through supervision tool output if the primary checkout is tangled, or if tasks are in flight and that watcher stops running or queued wakes are waiting to be drained.
 The drain script calls that guard after emptying the queue, which avoids repeating the queued-wakes warning for records it just consumed while still warning on stale watcher liveness.
 It leads with prominent bordered banners for the tangle and no-watcher cases so they cannot be skimmed past.
+`fm-guard.sh` is ad-hoc: it only checks when a supervision script runs, so a dead watcher can go undetected during long idle stretches.
+`bin/fm-watchdog.sh` fills that gap as an independent background sentinel: it monitors the watcher's liveness beacon every 30s, and if the beacon is older than 120s (or missing) it writes a `check:` entry to the durable wake queue so firstmate is alerted even when no other script is running.
 
 A presence-gated sub-supervisor (`bin/fm-supervise-daemon.sh`) extends this for walk-away supervision: the `/afk` skill activates it, after which the watcher reverts to daemon-managed one-shot mode and the daemon self-handles routine wakes in bash.
 The watcher and daemon share `bin/fm-classify-lib.sh` for captain-relevant status verbs and status-scan primitives.

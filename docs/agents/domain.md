@@ -107,7 +107,8 @@ A zero-token bash watcher (`bin/fm-watch.sh`) sleeps on the fleet and
 wakes the first mate only on actionable events. Benign wakes (working
 notes, idle heartbeats) are absorbed in bash. The watcher is singleton-safe
 and carries a liveness beacon; `bin/fm-guard.sh` warns if the watcher is
-stale.
+stale on supervision-script runs, and `bin/fm-watchdog.sh` runs continuously
+in the background to catch a dead watcher even during long idle stretches.
 
 ### Secondmates
 
