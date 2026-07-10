@@ -1,3 +1,7 @@
+# Compiled Go binaries (source in bin/*.go)
+bin/mm-event-sub
+bin/fm-kqueue-watch
+
 projects/
 state/
 data/

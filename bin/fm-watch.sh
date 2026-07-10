@@ -99,6 +99,8 @@ else
 fi
 
 POLL=${FM_POLL:-15}                   # seconds between cycles
+KQUEUE_MODE=${FM_WATCH_MODE:-poll}    # kqueue|poll; kqueue uses file events
+KQUEUE_WATCH="${SCRIPT_DIR}/fm-kqueue-watch.sh"
 HEARTBEAT=${FM_HEARTBEAT:-600}        # base seconds between heartbeat scans
 HEARTBEAT_MAX=${FM_HEARTBEAT_MAX:-7200}  # heartbeat backoff cap
 CHECK_INTERVAL=${FM_CHECK_INTERVAL:-300}  # seconds between *.check.sh sweeps
@@ -595,5 +597,17 @@ EOF
     fi
   fi
 
-  sleep "$POLL"
+  # Kqueue mode: block on events.jsonl writes instead of sleeping.
+  # When data arrives from mm-watch.sh, wake immediately so the signal
+  # and stale scans process it on the next iteration. The timeout ensures
+  # periodic check/scan/heartbeat cycles still run on schedule.
+  if [ "$KQUEUE_MODE" = kqueue ]; then
+    if [ -x "$KQUEUE_WATCH" ]; then
+      "$KQUEUE_WATCH" "$POLL" 2>/dev/null || true
+    else
+      sleep "$POLL"
+    fi
+  else
+    sleep "$POLL"
+  fi
 done
