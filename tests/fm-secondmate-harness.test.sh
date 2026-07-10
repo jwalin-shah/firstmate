@@ -41,6 +41,12 @@ BASE_PATH=${FM_TEST_BASE_PATH:-/usr/bin:/bin:/usr/sbin:/sbin}
 fm_git_identity fmtest fmtest@example.com
 TMP_ROOT=$(fm_test_tmproot fm-secondmate-harness)
 export FM_BACKEND=tmux
+# This suite exercises only the plain-tmux backend path and never opts into
+# herdr, so it must not depend on whether the calling shell happens to be
+# running inside herdr: unset HERDR_ENV so fm_backend_tmux_container_ensure's
+# herdr-ownership refusal cannot fire here, isolating from an ambient
+# HERDR_ENV=1 in the calling shell.
+unset HERDR_ENV
 
 # ===========================================================================
 # A) fm-harness.sh secondmate resolution + fallback (deterministic detect_own)
@@ -670,7 +676,9 @@ test_spawn_fallback_chain_and_crew_scout_unaffected() {
   mkdir -p "$home/data/$id" "$home/projects" "$home/state"
   printf 'brief\n' > "$home/data/$id/brief.md"
   : > "$launchlog"
-  PATH="$fakebin:$BASE_PATH" TMUX="fake,1,0" CLAUDECODE=1 \
+  # -u HERDR_ENV: isolate $TMUX auto-detection from an ambient HERDR_ENV=1 in
+  # the calling shell, which would otherwise flip auto-detection to herdr.
+  env -u HERDR_ENV PATH="$fakebin:$BASE_PATH" TMUX="fake,1,0" CLAUDECODE=1 \
     FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" \
     FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
     FM_PROJECTS_OVERRIDE="$home/projects" FM_CONFIG_OVERRIDE="$home/config" \

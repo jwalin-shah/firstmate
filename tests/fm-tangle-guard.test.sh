@@ -177,7 +177,9 @@ run_spawn() {
   local home=$1 id=$2 proj=$3 pane=$4 fakebin=$5
   mkdir -p "$home/data/$id"
   printf 'brief\n' > "$home/data/$id/brief.md"
-  FM_ROOT_OVERRIDE='' FM_HOME="$home" \
+  # -u HERDR_ENV: isolate $TMUX auto-detection from an ambient HERDR_ENV=1 in
+  # the calling shell, which would otherwise flip auto-detection to herdr.
+  env -u HERDR_ENV FM_ROOT_OVERRIDE='' FM_HOME="$home" \
     FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
     FM_PROJECTS_OVERRIDE="$home/projects" FM_CONFIG_OVERRIDE="$home/config" \
     FM_SPAWN_NO_GUARD=1 FM_FAKE_PANE_PATH="$pane" TMUX="fake,1,0" \

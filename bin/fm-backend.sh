@@ -67,20 +67,22 @@ fm_backend_is_known() {  # <name>
 # fm_backend_detect: detect the runtime firstmate itself is CURRENTLY executing
 # inside, from verified environment markers (mirrors bin/fm-harness.sh's
 # env-marker detection layer for harnesses). Prints the detected backend name
-# and returns 0, or returns 1 when nothing is detected. Nesting resolves
-# INNERMOST-first: tmux sets $TMUX in every process running inside it, even a
-# tmux started inside a herdr pane, so $TMUX is checked first and wins over
-# HERDR_ENV=1 in that nested case. herdr injects HERDR_ENV=1 (plus
-# HERDR_SOCKET_PATH/HERDR_PANE_ID) into every process it manages a pane for;
-# HERDR_ENV=1 alone (no $TMUX) selects herdr. Both markers empirically verified
-# on the reference dev machine.
+# and returns 0, or returns 1 when nothing is detected. When BOTH $TMUX and
+# HERDR_ENV=1 are present, herdr wins: this supersedes an earlier
+# "innermost-first" assumption (tmux started inside a herdr pane is an
+# independent nested session) that real-world testing disproved - herdr can
+# back its own managed panes directly with tmux, in which case $TMUX points at
+# HERDR'S OWN session and `tmux new-window` against it is refused by herdr.
+# $TMUX-alone (no HERDR_ENV) still selects tmux; HERDR_ENV=1-alone (no $TMUX)
+# still selects herdr. Both markers empirically verified on the reference dev
+# machine.
 fm_backend_detect() {
-  if [ -n "${TMUX:-}" ]; then
-    printf 'tmux'
-    return 0
-  fi
   if [ "${HERDR_ENV:-}" = "1" ]; then
     printf 'herdr'
+    return 0
+  fi
+  if [ -n "${TMUX:-}" ]; then
+    printf 'tmux'
     return 0
   fi
   return 1

@@ -594,7 +594,7 @@ validate_spawn_worktree() {  # <source> <inspect-target>
 W="fm-$ID"
 case "$BACKEND" in
   tmux)
-    SES=$(fm_backend_tmux_container_ensure)
+    SES=$(fm_backend_tmux_container_ensure) || exit 1
     T="$SES:$W"
     fm_backend_tmux_create_task "$SES" "$W" "$PROJ_ABS" || exit 1
     ;;
