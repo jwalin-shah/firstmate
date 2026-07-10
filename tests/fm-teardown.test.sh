@@ -742,35 +742,7 @@ test_teardown_purges_suppression_markers() {
   pass "teardown purges suppression markers for the task only"
 }
 
-# Test: a herdr-backed task records window=<session>:<pane-id>, so its markers
-# key on the whole target (tr ':/.' '___'). Teardown must purge those too.
-test_teardown_purges_herdr_suppression_markers() {
-  local case_dir rc
-  case_dir=$(make_case sup-markers-herdr)
-  fm_write_meta "$case_dir/state/task-x1.meta" \
-    "window=myses:%3" \
-    "worktree=$case_dir/wt" \
-    "project=$case_dir/project" \
-    "kind=ship" \
-    "mode=local-only" \
-    "backend=herdr"
-  printf 'done: shipped\nproof: all gates passed\n' > "$case_dir/state/task-x1.status"
-  touch "$case_dir/state/.count-myses_%3"
-  touch "$case_dir/state/.hash-myses_%3"
-  touch "$case_dir/state/.stale-myses_%3"
-  touch "$case_dir/state/.stale-since-myses_%3"
 
-  set +e
-  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
-  rc=$?
-  set -e
-
-  assert_absent "$case_dir/state/.count-myses_%3" "herdr-markers: .count removed"
-  assert_absent "$case_dir/state/.hash-myses_%3" "herdr-markers: .hash removed"
-  assert_absent "$case_dir/state/.stale-myses_%3" "herdr-markers: .stale removed"
-  assert_absent "$case_dir/state/.stale-since-myses_%3" "herdr-markers: .stale-since removed"
-  pass "teardown purges herdr-target suppression markers"
-}
 
 # Run teardown with a sandboxed HOME so cleanup_treehouse_scratch operates on
 # a controlled ~/.treehouse/ instead of the real one.
@@ -999,7 +971,6 @@ test_teardown_worktree_gone_still_completes() {
 }
 
 test_teardown_purges_suppression_markers
-test_teardown_purges_herdr_suppression_markers
 test_teardown_cleans_empty_treehouse_scratch
 test_teardown_preserves_live_treehouse_scratch
 test_teardown_orphan_process_cleanup

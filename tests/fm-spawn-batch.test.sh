@@ -23,10 +23,7 @@ export FM_BACKEND=tmux
 SANDBOX_CONFIG="$TMP_ROOT/config"
 mkdir -p "$SANDBOX_CONFIG"
 # This suite exercises only the plain-tmux backend path and never opts into
-# herdr, so isolate from an ambient HERDR_ENV=1 in the calling shell, which
-# would otherwise make fm_backend_tmux_container_ensure's herdr-ownership
 # refusal fire here.
-unset HERDR_ENV
 
 # Clear ambient firstmate overrides so the behavior test owns its environment.
 run_spawn() {

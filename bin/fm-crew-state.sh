@@ -126,8 +126,7 @@ LOG_VERB=$(log_verb_of "$LOG_LINE")
 # stays authoritative regardless of pane liveness - judge by the run-step, not the
 # shell - so a finished crew whose endpoint has closed still reports its run-step
 # state (e.g. done) instead of being masked as unknown. Backend-aware
-# (fm_backend_of_meta defaults absent backend= to tmux, the P1 contract): a
-# herdr task is read through fm_backend_capture instead of a bare tmux probe.
+# (fm_backend_of_meta defaults absent backend= to tmux).
 TASK_BACKEND=$(fm_backend_of_meta "$META")
 BACKEND_TARGET=$(fm_backend_target_of_meta "$META")
 EXPECTED_LABEL="fm-$ID"
@@ -138,29 +137,22 @@ pane_readable() {  # <target>
   esac
 }
 # crew_pane_is_busy: the busy-signature fallback, backend-aware the same way -
-# fm_backend_busy_state's native semantic state (herdr's agent.get) when
-# available, else the shared tmux pane-regex reader (fm_pane_is_busy,
-# bin/fm-tmux-lib.sh) unchanged for tmux/unknown.
+# fm_backend_busy_state's native semantic state when available, else the shared
+# tmux pane-regex reader (fm_pane_is_busy, bin/fm-tmux-lib.sh).
 #
 # `busy` alone is trusted outright. Both `idle` and unknown/unparseable fall
-# through to the shared tail-regex corroboration, NOT just unknown: herdr's
-# agent.get reports generation state ("working" while the model is streaming
-# a turn, "done"/"idle" once it is not - docs/herdr-backend.md "Busy state"),
-# which is a narrower signal than "this crew's turn/tool call is still in
-# progress". A crew blocked on its own long-running foreground tool call (e.g.
+# through to the shared tail-regex corroboration: a backend's native state is
+# a narrower signal than "this crew's turn/tool call is still in progress".
+# A crew blocked on its own long-running foreground tool call (e.g.
 # `no-mistakes axi run` without --yes, which blocks synchronously until a gate
 # or outcome - AGENTS.md section 11) is not generating for that whole span, so
-# agent.get can read idle/blocked (bin/backends/herdr.sh maps both to `idle`)
-# while the pane's own rendered text still shows the harness's busy banner
-# (BUSY_REGEX, e.g. "esc to interrupt") for the entire tool call, exactly like
-# tmux's regex-only reader would correctly report. Trusting herdr's `idle`
-# outright (skipping that corroboration) is what let a still-working crew read
-# as not-busy here, and - combined with a no-mistakes run-step lookup that also
-# missed attribution (see nm_runs_status_for_branch) - as not provably working in
-# fm-classify-lib.sh, triggering an immediate (non-wedge) stale wake instead of
-# the absorb-then-escalate path. A genuinely human-blocked agent (a permission
-# dialog, not mid-tool-call) does not render the busy banner, so this
-# corroboration does not mask that case: it stays correctly not-busy.
+# native idle can read idle while the pane's own rendered text still shows the
+# harness's busy banner (BUSY_REGEX, e.g. "esc to interrupt") for the entire
+# tool call. Trusting native idle outright (skipping that corroboration) is
+# what let a still-working crew read as not-busy. A genuinely human-blocked
+# agent (a permission dialog, not mid-tool-call) does not render the busy
+# banner, so this corroboration does not mask that case: it stays correctly
+# not-busy.
 crew_pane_is_busy() {  # <target>
   case "$TASK_BACKEND" in
     tmux) fm_pane_is_busy "$1" ;;
@@ -295,11 +287,7 @@ log_reports_ci_ready() {
 # there is no runs-listing subcommand under `axi` at all, so that table never
 # appears and the lookup was silently dead code; whenever the bare `axi
 # status` answer was not this crew's own branch, attribution always failed and
-# the caller fell straight through to the pane/log fallback below. (The
-# PRIMARY cause of the 2026-07 herdr false-surface incidents turned out to be
-# a separate bug in bin/fm-watch.sh's stale_is_terminal precedence - see that
-# file's history - but this cross-branch path was independently confirmed
-# dead code and is worth having actually work.)
+# the caller fell straight through to the pane/log fallback below.
 #
 # The real run-listing command is the top-level `no-mistakes runs` (verified:
 # `no-mistakes --help` lists it separately from `axi`). It is plain, human-

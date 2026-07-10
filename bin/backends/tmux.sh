@@ -55,19 +55,8 @@ fm_backend_tmux_send_text_submit() {  # <target> <text> <retries> <enter-sleep> 
 # fm_backend_tmux_container_ensure: reuse the current tmux session when
 # firstmate itself runs inside tmux, else ensure a dedicated detached
 # "firstmate" session exists. Mirrors fm-spawn.sh's container-ensure block;
-# prints the resolved session name. Refuses loudly when HERDR_ENV=1 is set:
-# herdr may back its own panes directly with tmux, in which case $TMUX points
-# at herdr's own session and `tmux new-window` against it is refused by herdr,
-# silently stranding the spawn. This can be reached even though
-# fm_backend_detect now prefers herdr on nested markers, via an explicit
-# --backend tmux / FM_BACKEND=tmux / config/backend=tmux override.
+# prints the resolved session name.
 fm_backend_tmux_container_ensure() {
-  if [ "${HERDR_ENV:-}" = "1" ]; then
-    echo "error: refusing tmux backend - this process is running inside herdr (HERDR_ENV=1)." >&2
-    echo "herdr may own this tmux session directly and refuses windows created outside its own management, which silently strands crewmate spawns." >&2
-    echo "Use the herdr backend instead: --backend herdr, FM_BACKEND=herdr, or config/backend=herdr." >&2
-    return 1
-  fi
   if [ -n "${TMUX:-}" ]; then
     tmux display-message -p '#S'
   else

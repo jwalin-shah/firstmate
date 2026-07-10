@@ -13,12 +13,7 @@ set -u
 TMP_ROOT=$(fm_test_tmproot fm-secondmate-safety)
 export FM_BACKEND=tmux
 # This suite exercises only the plain-tmux backend path and never opts into
-# herdr, so isolate from an ambient HERDR_ENV=1 in the calling shell, which
-# would otherwise make fm_backend_tmux_container_ensure's herdr-ownership
 # refusal fire here.
-unset HERDR_ENV
-
-
 test_fm_home_parameterization() {
   local brief home_one home_two out
   home_one="$TMP_ROOT/home one"
