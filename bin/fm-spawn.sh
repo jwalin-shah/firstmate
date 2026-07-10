@@ -232,7 +232,13 @@ launch_template() {
     # the defense-in-depth backstop for any pane this flag cannot reach.
     claude|ca) printf '%s' 'CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false '"${harness}"' --dangerously-skip-permissions __MODELFLAG____EFFORTFLAG__"$(cat __BRIEF__)"' ;;
     ct) printf '%s' 'CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false ct __MODELFLAG____EFFORTFLAG__"$(cat __BRIEF__)"' ;;
-    agy) printf '%s' 'agy --dangerously-skip-permissions __MODELFLAG____EFFORTFLAG__"$(cat __BRIEF__)"' ;;
+    # -i (--prompt-interactive) is required, not just cosmetic: a bare
+    # positional argument is silently dropped by agy in every case (verified
+    # empirically, agy 1.1.0), and -i is the flag verified to survive the
+    # first-run "trust this folder" dialog's process restart, carrying the
+    # brief through to the freshly-trusted session (see the harness-adapters
+    # skill's agy section).
+    agy) printf '%s' 'agy --dangerously-skip-permissions __MODELFLAG____EFFORTFLAG__-i "$(cat __BRIEF__)"' ;;
     cursor) printf '%s' 'cursor agent --force __MODELFLAG____EFFORTFLAG__"$(cat __BRIEF__)"' ;;
     codex)
       if [ "$kind" = secondmate ]; then

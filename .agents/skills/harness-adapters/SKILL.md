@@ -115,6 +115,32 @@ The decision persists for the repo, so later worktrees of the same project skip 
 Resume after exit with `codex resume <session-id>`.
 The session id is printed on quit.
 
+## agy (VERIFIED 2026-07-09, Antigravity CLI 1.1.0)
+
+| Fact | Value |
+|---|---|
+| Busy-pane signature | `Generating...` / `Thought for Ns, N tokens` |
+| Skill invocation | no verified separate form; use natural language |
+
+Project trust dialog on first run per directory: "Do you trust the contents
+of this project?" with a `> Yes, I trust this folder` / `No, exit` picker,
+confirmed with Enter (`> Yes...` is the default-selected option).
+The decision persists per directory, so later spawns in the same worktree
+slot skip it.
+
+Accepting the dialog restarts the whole CLI process (full banner reprint,
+fresh empty composer) rather than just dismissing an overlay.
+`fm-spawn`'s launch template passes the brief with `-i` (`--prompt-interactive`),
+which is the flag verified to survive that restart - the queued `-i` prompt
+is still processed once the fresh session comes up.
+A bare positional argument (no `-i`) is silently dropped by agy in every case,
+dialog or not - it is not a recognized initial-prompt mechanism for this
+build, so `-i` is required for brief delivery, not merely for surviving the
+trust dialog.
+No post-launch keystroke or brief-resend is needed as a result; do not add
+dialog-detection/retry machinery for agy without re-verifying this still
+holds on a newer build.
+
 ## opencode (VERIFIED 2026-06-11, v1.15.7-1.17.3)
 
 | Fact | Value |
