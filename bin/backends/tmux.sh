@@ -82,6 +82,10 @@ fm_backend_tmux_container_ensure() {
 # (session:window, matching how fm-spawn.sh composed its own $T).
 fm_backend_tmux_create_task() {  # <session> <window-name> <proj-abs>
   local ses=$1 wname=$2 proj_abs=$3
+  if [ -z "$ses" ]; then
+    echo "error: empty session name not allowed - '-t :' targets the current session, not a session literally named ''" >&2
+    return 1
+  fi
   if tmux list-windows -t "$ses:" -F '#{window_name}' | grep -qx "$wname"; then
     echo "error: window $ses:$wname already exists" >&2
     return 1
