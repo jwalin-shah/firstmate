@@ -144,6 +144,23 @@ check_in_flight_consistency() {
   [ -z "$issues" ] && pass "in-flight-consistency" || violated "in-flight-consistency" "$issues"
 }
 
+# Check 8: .no-mistakes.yaml test command isn't a raw loop when make test exists.
+# The raw shell loop bypasses make build. If the Makefile has test: and the yaml
+# overrides the test command with something that isn't 'make test', flag it.
+check_test_command_consistency() {
+  local yml="$FM_ROOT/.no-mistakes.yaml" mk="$FM_ROOT/Makefile"
+  [ -f "$yml" ] || { pass "test-command-consistency (no .no-mistakes.yaml)"; return; }
+  [ -f "$mk" ] || { pass "test-command-consistency (no Makefile)"; return; }
+  command -v yq >/dev/null 2>&1 || { pass "test-command-consistency (yq not installed, skipping)"; return; }
+  local test_cmd
+  test_cmd=$(yq -r '.commands.test // ""' "$yml" 2>/dev/null)
+  [ -n "$test_cmd" ] || { pass "test-command-consistency (no test override)"; return; }
+  # If the yaml delegates to make test, we're good.
+  echo "$test_cmd" | grep -q 'make test' && { pass "test-command-consistency (delegates to make test)"; return; }
+  # Otherwise: the yaml has a raw shell command and the Makefile has test: — they can diverge.
+  violated "test-command-consistency" ".no-mistakes.yaml test command does not delegate to make test. The Makefile has a test: target but the yaml overrides it with a raw command that may bypass make build. Change to 'make test'."
+}
+
 # --- main ---
 check_harness_adapter_consistency
 check_dispatch_profile_validity
@@ -152,6 +169,7 @@ check_skill_registration
 check_secondmate_branch
 check_tool_availability
 check_in_flight_consistency
+check_test_command_consistency
 
 echo "fm-verify: $PASS pass, $VIOLATED violated"
 exit $(( VIOLATED > 0 ? 1 : 0 ))
