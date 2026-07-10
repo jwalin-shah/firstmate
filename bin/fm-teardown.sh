@@ -651,6 +651,22 @@ if [ "$KIND" = scout ] && [ "$FORCE" != "--force" ]; then
   fi
 fi
 
+# Proof-of-action gate: for ship tasks, every gate in the brief must be checked.
+# The crewmate appends "proof: all gates passed" to the status file after filling
+# the checklist. Refuse teardown without it — unchecked gates are the same as
+# failed gates.
+if [ "$KIND" != scout ] && [ "$KIND" != secondmate ] && [ "$FORCE" != "--force" ]; then
+  STATUS_FILE="$STATE/$ID.status"
+  if [ -f "$STATUS_FILE" ] && ! grep -qF 'proof: all gates passed' "$STATUS_FILE"; then
+    echo "REFUSED: ship task $ID has not passed the proof-of-action gates." >&2
+    echo "The brief requires machine evidence (build, test, vet, tldr, ccc, githits)" >&2
+    echo "before reporting done. Have the crewmate fill the checklist and append" >&2
+    echo "'proof: all gates passed' to the status file, or use --force after" >&2
+    echo "explicit captain approval to skip the gates." >&2
+    exit 1
+  fi
+fi
+
 if [ -d "$WT" ] && [ "$FORCE" != "--force" ]; then
   if [ "$KIND" = secondmate ]; then
     :

@@ -554,6 +554,44 @@ If \`AGENTS.md\` or \`CLAUDE.md\` already exists, or if this task produced durab
 If this task produced durable project-intrinsic knowledge, record it in \`AGENTS.md\` as part of your change.
 Keep it proportionate: skip \`AGENTS.md\` edits for trivial tasks that produced no durable project knowledge.
 
+# Skills pipeline
+Do NOT skip any stage. Each stage produces output that gates the next. If you
+do not know how to invoke a skill, ask firstmate before proceeding. The pipeline
+runs in order, no shortcuts:
+
+1. **wayfinder** — understand the codebase. Map the relevant code paths, call
+   chains, data flow. If the project has \`AGENTS.md\`, read it first. Use
+   \`tldr structure\` and \`tldr calls\` on the functions you will touch.
+   Output: a short map of what lives where and how control flows.
+
+2. **codebase-design** — understand the architecture. Is the change consistent
+   with how the project is structured? Does it belong in an existing package or
+   a new one? Does the data model fit? Output: design assessment (fit/refactor/new).
+
+3. **to-spec** — produce a concrete spec from the task description and your
+   codebase understanding. What exactly changes, in which files, with what
+   acceptance criteria? Output: spec.md (file paths, function signatures, test
+   cases, acceptance criteria).
+
+4. **implement** — build it. Follow the spec. Commit on your branch. Output:
+   working code, committed.
+
+5. **code-review** — find bugs. Run full adversarial review. Check correctness,
+   edge cases, error handling, concurrency. Output: findings list. Fix every
+   confirmed bug before proceeding.
+
+6. **simplify** — clean up. Remove dead code, collapse redundancy, flatten
+   nesting. The diff should be the minimum that satisfies the spec. Output:
+   cleaned commits.
+
+7. **grill-me** — adversarial self-review. Pretend you are a hostile reviewer
+   trying to reject this change. What would they flag? Output: rebuttal or
+   fixes for every flag raised.
+
+Each stage appends a one-line status: \`working: {stage} complete\`. The next
+stage does not start until the current one is done. If a stage reveals that an
+earlier stage was wrong, loop back — the pipeline is a spiral, not a waterfall.
+
 # Tools
 $TOOLS_SECTION
 # Phased execution
@@ -678,6 +716,44 @@ If \`AGENTS.md\` or \`CLAUDE.md\` already exists, or if this task produced durab
 If this task produced durable project-intrinsic knowledge, record it in \`AGENTS.md\` as part of your change.
 Keep it proportionate: skip \`AGENTS.md\` edits for trivial tasks that produced no durable project knowledge.
 
+# Skills pipeline
+Do NOT skip any stage. Each stage produces output that gates the next. If you
+do not know how to invoke a skill, ask firstmate before proceeding. The pipeline
+runs in order, no shortcuts:
+
+1. **wayfinder** — understand the codebase. Map the relevant code paths, call
+   chains, data flow. If the project has \`AGENTS.md\`, read it first. Use
+   \`tldr structure\` and \`tldr calls\` on the functions you will touch.
+   Output: a short map of what lives where and how control flows.
+
+2. **codebase-design** — understand the architecture. Is the change consistent
+   with how the project is structured? Does it belong in an existing package or
+   a new one? Does the data model fit? Output: design assessment (fit/refactor/new).
+
+3. **to-spec** — produce a concrete spec from the task description and your
+   codebase understanding. What exactly changes, in which files, with what
+   acceptance criteria? Output: spec.md (file paths, function signatures, test
+   cases, acceptance criteria).
+
+4. **implement** — build it. Follow the spec. Commit on your branch. Output:
+   working code, committed.
+
+5. **code-review** — find bugs. Run full adversarial review. Check correctness,
+   edge cases, error handling, concurrency. Output: findings list. Fix every
+   confirmed bug before proceeding.
+
+6. **simplify** — clean up. Remove dead code, collapse redundancy, flatten
+   nesting. The diff should be the minimum that satisfies the spec. Output:
+   cleaned commits.
+
+7. **grill-me** — adversarial self-review. Pretend you are a hostile reviewer
+   trying to reject this change. What would they flag? Output: rebuttal or
+   fixes for every flag raised.
+
+Each stage appends a one-line status: \`working: {stage} complete\`. The next
+stage does not start until the current one is done. If a stage reveals that an
+earlier stage was wrong, loop back — the pipeline is a spiral, not a waterfall.
+
 # Tools
 $TOOLS_SECTION
 # Proof of action
@@ -700,7 +776,8 @@ exact command that proves it. "Treehouse is from Kun Chen" is not a fact until
 
 **Gate fill checklist:** before reporting \`done\`, replace each \`- [ ]\` with
 \`- [x]\` after running the command AND pasting its exact output below. An
-unchecked box is a blocker.
+unchecked box is a blocker. When all gates pass, append \`proof: all gates passed\`
+to the status file. Teardown refuses without this marker.
 
 $DOD
 EOF
