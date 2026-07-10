@@ -132,6 +132,13 @@ write_meta() {
     "project=$case_dir/project" \
     "kind=$kind" \
     "mode=$mode"
+  # A real completed ship task carries the proof-of-action marker (the brief
+  # mandates it and teardown fails closed without it). Model that by default so
+  # the ALLOW cases exercise the landed-work logic, not the proof gate. The
+  # dedicated missing-file / missing-marker cases set the status up themselves.
+  if [ "$kind" = ship ]; then
+    printf 'done: shipped\nproof: all gates passed\n' > "$case_dir/state/task-x1.status"
+  fi
 }
 
 # Commit something on the worktree's task branch. Args: case_dir [message]
@@ -747,6 +754,7 @@ test_teardown_purges_herdr_suppression_markers() {
     "kind=ship" \
     "mode=local-only" \
     "backend=herdr"
+  printf 'done: shipped\nproof: all gates passed\n' > "$case_dir/state/task-x1.status"
   touch "$case_dir/state/.count-myses_%3"
   touch "$case_dir/state/.hash-myses_%3"
   touch "$case_dir/state/.stale-myses_%3"
@@ -862,8 +870,141 @@ SH
   pass "teardown finds and reports orphan processes matching the task key"
 }
 
+# Test: the proof-of-action gate fails CLOSED. A ship task with NO status file
+# (no gate evidence at all) is refused, not silently torn down. This is the
+# fail-open bug from the audit: the old check only refused when the file existed.
+test_ship_missing_status_file_refuses() {
+  local case_dir rc
+  case_dir=$(make_case proof-missing-file)
+  write_meta "$case_dir" no-mistakes ship
+  wt_commit "$case_dir" "unpushed work at risk"   # real work -> proof gate applies
+  rm -f "$case_dir/state/task-x1.status"
+
+  set +e
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 1 "$rc" "proof-missing-file: teardown must refuse a ship task with no status file"
+  assert_grep 'has not passed the proof-of-action gates' "$case_dir/stderr" \
+    "proof-missing-file: refuses at the proof gate"
+  assert_grep 'No status file' "$case_dir/stderr" \
+    "proof-missing-file: names the missing-evidence reason"
+  pass "ship teardown fails closed when the status file is missing"
+}
+
+# Test: a status file that exists but lacks the proof marker is still refused.
+test_ship_status_without_proof_marker_refuses() {
+  local case_dir rc
+  case_dir=$(make_case proof-no-marker)
+  write_meta "$case_dir" no-mistakes ship
+  wt_commit "$case_dir" "unpushed work at risk"   # real work -> proof gate applies
+  printf 'done: shipped\n' > "$case_dir/state/task-x1.status"
+
+  set +e
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 1 "$rc" "proof-no-marker: teardown must refuse without the proof marker"
+  assert_grep 'has not passed the proof-of-action gates' "$case_dir/stderr" \
+    "proof-no-marker: refuses at the proof gate"
+  ! grep -q 'No status file' "$case_dir/stderr" \
+    || fail "proof-no-marker: should not claim the file is missing (it exists)"
+  pass "ship teardown fails closed when the proof marker is absent"
+}
+
+# Test: scratch GC uses an allow-list, not a git probe. A scratch dir with a dead
+# git ref but UNEXPECTED extra content is preserved, never rm -rf'd (that content
+# could be unlanded work).
+test_teardown_preserves_nonbare_scratch() {
+  local case_dir dir
+  case_dir=$(make_case treehouse-gc-nonbare)
+  write_meta "$case_dir" local-only ship
+
+  dir="$case_dir/.treehouse/scratch-project-nonbare-1"
+  mkdir -p "$dir"
+  printf '{"worktrees":[{"name":"1","path":"/nonexistent/path"}]}\n' > "$dir/treehouse-state.json"
+  touch "$dir/treehouse-state.lock"
+  # Unexpected content: a stray file the allow-list must protect.
+  printf 'do not delete me\n' > "$dir/leftover-work.txt"
+
+  set +e
+  run_teardown_with_home "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  set -e
+
+  assert_present "$dir" "gc-nonbare: scratch dir with unexpected content is preserved"
+  assert_grep 'kept non-bare treehouse scratch' "$case_dir/stderr" \
+    "gc-nonbare: teardown reports it kept the non-bare dir"
+  pass "teardown does not rm -rf a scratch dir that holds unexpected content"
+}
+
+# Test: orphan cleanup reaps a slug-less child by its working directory. The
+# process carries no fm-<id> in argv (so the argv scan misses it) but its cwd is
+# inside the task worktree; the lsof cwd scan finds it.
+test_teardown_orphan_cleanup_by_cwd() {
+  local case_dir
+  case_dir=$(make_case orphan-cwd)
+  write_meta "$case_dir" local-only ship
+
+  # lsof mock: one process (pid 54321) whose cwd is inside the worktree.
+  cat > "$case_dir/fakebin/lsof" <<SH
+#!/usr/bin/env bash
+printf 'p54321\nn%s/wt/sub\n' "$case_dir"
+exit 0
+SH
+  chmod +x "$case_dir/fakebin/lsof"
+  # ps mock: no argv orphans; pid 54321 is parented by PID 1; pgid reads benign.
+  cat > "$case_dir/fakebin/ps" <<'SH'
+#!/usr/bin/env bash
+case "$*" in
+  "-eo pid=,ppid=,command=") printf '999 1 unrelated-process no-match\n' ;;
+  *"-o ppid="*"54321"*) printf '1\n' ;;
+  *"-o ppid="*) printf '4242\n' ;;
+  *"-o pgid="*) printf '' ;;
+esac
+exit 0
+SH
+  chmod +x "$case_dir/fakebin/ps"
+
+  set +e
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  set -e
+
+  assert_grep 'cleanup: killing 1 orphan process(es) for fm-task-x1' "$case_dir/stderr" \
+    "orphan-cwd: slug-less orphan reaped by working directory"
+  pass "teardown reaps a slug-less orphan by its worktree cwd"
+}
+
+# Test: teardown completes cleanly when the worktree is already gone. The process-
+# group kill runs ahead of the (skipped) treehouse return, so a missing worktree
+# does not strand the endpoint kill or error the run.
+test_teardown_worktree_gone_still_completes() {
+  local case_dir rc
+  case_dir=$(make_case wt-gone)
+  write_meta "$case_dir" local-only ship
+  # Landed work so only teardown mechanics remain, then remove the worktree.
+  wt_commit "$case_dir" "landed"
+  add_fork_with_pushed_branch "$case_dir"
+  rm -rf "$case_dir/wt"
+
+  set +e
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 0 "$rc" "wt-gone: teardown completes when the worktree is already gone"
+  ! grep -q REFUSED "$case_dir/stderr" || fail "wt-gone: should not refuse landed work"
+  pass "teardown completes cleanly when the worktree is already gone"
+}
+
 test_teardown_purges_suppression_markers
 test_teardown_purges_herdr_suppression_markers
 test_teardown_cleans_empty_treehouse_scratch
 test_teardown_preserves_live_treehouse_scratch
 test_teardown_orphan_process_cleanup
+test_ship_missing_status_file_refuses
+test_ship_status_without_proof_marker_refuses
+test_teardown_preserves_nonbare_scratch
+test_teardown_orphan_cleanup_by_cwd
+test_teardown_worktree_gone_still_completes

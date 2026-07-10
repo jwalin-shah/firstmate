@@ -107,12 +107,31 @@ remove_grok_turnend_auth() {
 # (fm-<task-id>) in their command line. This cleans up leaked MCP server
 # children, subprocess shells, and other descendants that survived the pane kill.
 cleanup_task_orphans() {
-  local task_id=$1 task_key
+  local task_id=$1 wt=${2:-} tasktmp=${3:-} task_key
   task_key="fm-$task_id"
   local orphans
+  # (a) argv match: PID-1-parented processes whose command line carries fm-<id>.
   orphans=$(ps -eo pid=,ppid=,command= 2>/dev/null | awk -v key="$task_key" \
     'BEGIN { pat = "(^|[^A-Za-z0-9_-])" key "([^A-Za-z0-9_-]|$)" }
      $2 == 1 && $0 ~ pat { print $1 }') || true
+  # (b) cwd match: PID-1-parented processes whose current directory is inside the
+  # task worktree or task temp. A slug-less child (e.g. a bare python server)
+  # carries no task key in argv but still runs inside the worktree, so the argv
+  # scan alone leaks it. One lsof scan of cwd fds finds these by location.
+  if command -v lsof >/dev/null 2>&1 && { [ -n "$wt" ] || [ -n "$tasktmp" ]; }; then
+    local cwd_pids p pp
+    cwd_pids=$(lsof -w -d cwd -Fpn 2>/dev/null | awk -v wt="$wt" -v tt="$tasktmp" '
+      /^p/ { pid = substr($0, 2); next }
+      /^n/ { d = substr($0, 2)
+             if ((wt != "" && index(d, wt) == 1) || (tt != "" && index(d, tt) == 1)) print pid }') || true
+    for p in $cwd_pids; do
+      pp=$(ps -o ppid= -p "$p" 2>/dev/null | tr -d ' ') || pp=
+      [ "$pp" = "1" ] && orphans="$orphans
+$p"
+    done
+    # De-duplicate ids collected from both scans.
+    orphans=$(printf '%s\n' $orphans | awk 'NF && !seen[$0]++') || true
+  fi
   [ -n "$orphans" ] || return 0
   printf 'cleanup: killing %d orphan process(es) for %s\n' \
     "$(printf '%s\n' "$orphans" | wc -l | tr -d ' ')" "$task_key" >&2
@@ -140,9 +159,34 @@ cleanup_treehouse_scratch() {
     if [ -n "$wt_path" ] && [ -d "$wt_path" ]; then
       git -C "$wt_path" rev-parse --git-dir >/dev/null 2>&1 && continue
     fi
-    rm -rf "$dir"
-    printf 'removed empty treehouse scratch worktree: %s\n' "$dir" >&2
+    # Allow-list, not a git probe: only rm a bare scaffold whose top-level entries
+    # are nothing but treehouse metadata. A dead git ref is NOT license to rm -rf a
+    # directory that still holds a worktree tree or any other content - that could
+    # destroy unlanded work. If anything unexpected is present, leave it and warn.
+    if scratch_is_bare_scaffold "$dir"; then
+      rm -rf "$dir"
+      printf 'removed empty treehouse scratch scaffold: %s\n' "$dir" >&2
+    else
+      printf 'kept non-bare treehouse scratch (unexpected contents, not deleting): %s\n' "$dir" >&2
+    fi
   done
+}
+
+# True only when the scratch dir contains nothing beyond treehouse's own state
+# and lock files - i.e. its worktree tree is already gone. Any other entry
+# (a leftover worktree dir, stray files) means it is not a bare scaffold and must
+# not be rm -rf'd on the strength of a dead git ref alone.
+scratch_is_bare_scaffold() {
+  local dir=$1 f base
+  for f in "$dir"/* "$dir"/.*; do
+    [ -e "$f" ] || continue
+    base=$(basename "$f")
+    case "$base" in
+      .|..|treehouse-state.json|treehouse-state.lock) continue ;;
+      *) return 1 ;;
+    esac
+  done
+  return 0
 }
 
 # Resolve the PR number for a worktree branch via gh-axi. Echoes the number on a
@@ -655,15 +699,36 @@ fi
 # The crewmate appends "proof: all gates passed" to the status file after filling
 # the checklist. Refuse teardown without it — unchecked gates are the same as
 # failed gates.
-if [ "$KIND" != scout ] && [ "$KIND" != secondmate ] && [ "$FORCE" != "--force" ]; then
-  STATUS_FILE="$STATE/$ID.status"
-  if [ -f "$STATUS_FILE" ] && ! grep -qF 'proof: all gates passed' "$STATUS_FILE"; then
-    echo "REFUSED: ship task $ID has not passed the proof-of-action gates." >&2
-    echo "The brief requires machine evidence (build, test, vet, tldr, ccc, githits)" >&2
-    echo "before reporting done. Have the crewmate fill the checklist and append" >&2
-    echo "'proof: all gates passed' to the status file, or use --force after" >&2
-    echo "explicit captain approval to skip the gates." >&2
-    exit 1
+if [ "$KIND" != scout ] && [ "$KIND" != secondmate ] && [ "$FORCE" != "--force" ] && [ -d "$WT" ]; then
+  # Fail CLOSED against lost work: the brief tells every ship crewmate to append
+  # 'proof: all gates passed' and says teardown refuses without it. The old test
+  # only refused when the status file existed but lacked the marker, so a MISSING
+  # file silently bypassed the gate. Require the file to exist AND carry the
+  # marker - BUT only when the worktree actually holds commits that are not on any
+  # remote (real work at risk). A fresh/empty worktree or work already pushed has
+  # nothing to attest; demanding the marker there would false-refuse routine
+  # teardowns (the landed-work check below is what guards pushed/merged work).
+  # "Real work" = commits on HEAD that the default branch does not already contain.
+  # Using the default branch (not --remotes) is correct for local-only repos with
+  # no remote, where every commit is "not on a remote" including the base.
+  proof_base=$(default_branch 2>/dev/null || true)
+  proof_work=""
+  if [ -n "$proof_base" ]; then
+    proof_work=$(git -C "$WT" log --oneline HEAD --not "$proof_base" -- 2>/dev/null | head -1 || true)
+  fi
+  if [ -n "$proof_work" ]; then
+    STATUS_FILE="$STATE/$ID.status"
+    if [ ! -f "$STATUS_FILE" ] || ! grep -qF 'proof: all gates passed' "$STATUS_FILE"; then
+      echo "REFUSED: ship task $ID has not passed the proof-of-action gates." >&2
+      if [ ! -f "$STATUS_FILE" ]; then
+        echo "No status file at $STATUS_FILE - the crewmate reported no gate evidence at all." >&2
+      fi
+      echo "The brief requires machine evidence (build, test, vet, tldr, ccc, githits)" >&2
+      echo "before reporting done. Have the crewmate fill the checklist and append" >&2
+      echo "'proof: all gates passed' to the status file, or use --force after" >&2
+      echo "explicit captain approval to skip the gates." >&2
+      exit 1
+    fi
   fi
 fi
 
@@ -723,6 +788,23 @@ if [ -d "$WT" ] && [ "$FORCE" != "--force" ]; then
   fi
 fi
 
+# Kill the task's process group FIRST, before treehouse return and the runtime
+# endpoint kill. Reaping the agent's children while the tmux pane still exists
+# (so we can resolve its pgid) means treehouse return cannot reparent survivors
+# to PID 1. This runs even when the worktree is already gone. SAFETY: never kill
+# our own process group, the firstmate session, or the tmux server.
+if [ "$BACKEND" = tmux ] && [ -n "$T" ]; then
+  self_pgid=$(ps -o pgid= -p "$$" 2>/dev/null | tr -d ' ') || self_pgid=
+  pane_pid=$(tmux list-panes -t "$T" -F '#{pane_pid}' 2>/dev/null | head -1) || true
+  if [ -n "$pane_pid" ] && [ "$pane_pid" -gt 0 ] 2>/dev/null; then
+    pgid=$(ps -o pgid= -p "$pane_pid" 2>/dev/null | tr -d ' ') || true
+    if [ -n "$pgid" ] && [ "$pgid" -gt 1 ] 2>/dev/null \
+        && [ "$pgid" != "$self_pgid" ] 2>/dev/null; then
+      kill -- -"$pgid" 2>/dev/null || true
+    fi
+  fi
+fi
+
 # Best-effort: drop the local task branch so the shared repo does not accumulate refs.
 if [ -d "$WT" ] && [ "$KIND" != secondmate ]; then
   branch=$(git -C "$WT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo HEAD)
@@ -739,25 +821,12 @@ if [ -d "$WT" ] && [ "$KIND" != secondmate ]; then
   ( cd "$PROJ" && treehouse return --force "$WT" )
 fi
 
-# Kill the task's process group before the runtime endpoint kill, so children
-# of the agent are reaped before they can be reparented to PID 1 (launchd).
-# SAFETY: guard against killing our own process group, the firstmate session,
-# or the tmux server (prior code killed the session it was running in).
-if [ "$BACKEND" = tmux ] && [ -n "$T" ]; then
-  self_pgid=$(ps -o pgid= -p "$$" 2>/dev/null | tr -d ' ') || self_pgid=
-  pane_pid=$(tmux list-panes -t "$T" -F '#{pane_pid}' 2>/dev/null | head -1) || true
-  if [ -n "$pane_pid" ] && [ "$pane_pid" -gt 0 ] 2>/dev/null; then
-    pgid=$(ps -o pgid= -p "$pane_pid" 2>/dev/null | tr -d ' ') || true
-    if [ -n "$pgid" ] && [ "$pgid" -gt 1 ] 2>/dev/null \
-        && [ "$pgid" != "$self_pgid" ] 2>/dev/null; then
-      kill -- -"$pgid" 2>/dev/null || true
-    fi
-  fi
-fi
 fm_backend_kill "$BACKEND" "$T" "fm-$ID" 2>/dev/null || true
 # Catch orphan processes already reparented to PID 1 (e.g. cocoindex MCP servers
-# whose parent exited before the process-group kill above).
-cleanup_task_orphans "$ID"
+# whose parent exited before the process-group kill above). Pass the worktree and
+# task temp so slug-less children (a bare server whose argv carries no fm-<id>)
+# are still reaped by their working directory.
+cleanup_task_orphans "$ID" "$WT" "$TASK_TMP"
 if [ "$KIND" = secondmate ]; then
   [ -n "$HOME_PATH" ] || HOME_PATH=$WT
   remove_firstmate_home "$HOME_PATH" "secondmate home" "$ID"
