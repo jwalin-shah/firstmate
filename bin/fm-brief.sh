@@ -8,8 +8,16 @@
 # task spec – max 3 sentences), {acceptance}, and {constraints}; firstmate
 # fills those before spawning.
 #
-# Usage: fm-brief.sh <task-id> <repo-name> [--scout] [--phases]
+# Usage: fm-brief.sh <task-id> <repo-name> [--scout] [--phases] [--harness <name>]
 #        fm-brief.sh <task-id> --secondmate <project>...
+#   --harness <name> names the harness this task will actually run on (ca, ct,
+#   claude, codex, cursor, agy, opencode, pi, grok - normalized via
+#   fm-harness.sh's normalize_harness, so ca/ct fold into claude). Ship briefs
+#   use it to fill the "Skill invocation" section with a concrete, per-harness
+#   invocation form for each of the 7 pipeline skills. Pass the same value
+#   fm-spawn.sh will get via --harness so the brief matches the actual launch;
+#   when omitted, it falls back to the same crew-harness resolution fm-spawn.sh
+#   uses by default (config/crew-harness, else firstmate's own harness).
 #   --scout writes the scout contract instead: the deliverable is a report at
 #   data/<task-id>/report.md (no branch, no push, no PR) and the worktree is scratch.
 #   --phases writes a phased ship brief with four ordered phases (analyze →
@@ -46,18 +54,47 @@ FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
+# Source normalize_harness (ca/ct -> claude) and resolve_crew. Passing "noop"
+# hits fm-harness.sh's default case arm (detect_own()); stdout/stderr are
+# discarded so only the function definitions we need survive the source.
+# shellcheck source=bin/fm-harness.sh
+. "$SCRIPT_DIR/fm-harness.sh" noop >/dev/null 2>&1
 KIND=ship
 PHASES=0
+HARNESS_ARG=""
 POS=()
+want_value=
 for a in "$@"; do
+  if [ -n "$want_value" ]; then
+    case "$a" in
+      --*) echo "error: --$want_value requires a value" >&2; exit 1 ;;
+    esac
+    HARNESS_ARG=$a
+    want_value=
+    continue
+  fi
   case "$a" in
     --scout) KIND=scout ;;
     --phases) PHASES=1 ;;
     --secondmate) KIND=secondmate ;;
+    --harness) want_value=harness ;;
+    --harness=*) HARNESS_ARG=${a#--harness=} ;;
     *) POS+=("$a") ;;
   esac
 done
+[ -z "$want_value" ] || { echo "error: --$want_value requires a value" >&2; exit 1; }
 ID=${POS[0]}
+
+# Resolve the harness the crewmate this brief targets will actually run on:
+# an explicit --harness wins; otherwise fall back to the same crew-harness
+# resolution fm-spawn.sh uses by default (config/crew-harness, else own
+# harness), so an unspecified --harness still yields a concrete adapter in
+# the common case where firstmate hasn't overridden it per-dispatch.
+if [ -n "$HARNESS_ARG" ]; then
+  HARNESS=$(normalize_harness "$HARNESS_ARG")
+else
+  HARNESS=$(resolve_crew)
+fi
 
 # --phases is ship-only and mutually exclusive with --scout.
 if [ "$PHASES" = 1 ] && [ "$KIND" != ship ]; then
@@ -75,6 +112,116 @@ shell_quote() {
 }
 
 STATUS_FILE=$(shell_quote "$STATE/$ID.status")
+
+# ---------------------------------------------------------------------------
+# Skill invocation – harness-specific "how" for the 7-stage skills pipeline
+# below (section "Skill invocation" in AGENTS.md section 4 no-mistakes
+# invocation table extended to the full pipeline). Facts sourced from the
+# harness-adapters skill.
+# ---------------------------------------------------------------------------
+
+# Print the "## Skill invocation" body for the resolved harness $1 (already
+# normalized, e.g. ca/ct -> claude). Each of the 7 pipeline stages gets a
+# concrete invocation form for that harness; unverified/unknown harnesses get
+# an explicit natural-language fallback instead of a guessed command syntax.
+build_skill_invocation() {
+  local h=$1
+  case "$h" in
+    claude|grok)
+      cat <<'BLOCK'
+Invoke each stage as a slash command: `/<skill>`. This opens a slash-autocomplete
+popup — do not send Enter too fast or it selects the popup entry instead of
+submitting; if the composer still shows the command unsent, send Enter again.
+
+| Stage | Invocation |
+|---|---|
+| wayfinder | `/wayfinder` |
+| codebase-design | `/codebase-design` |
+| to-spec | `/to-spec` |
+| implement | `/implement` |
+| code-review | `/code-review` |
+| simplify | `/simplify` |
+| grill-me | `/grill-me` |
+BLOCK
+      ;;
+    codex)
+      cat <<'BLOCK'
+Invoke each stage with a `$`-prefixed skill command: `$<skill>`. Do NOT use
+`/<skill>` — that form is claude-only and codex rejects it as "Unrecognized
+command". `$<skill>` opens a `$`-autocomplete popup — do not send Enter too
+fast or it selects the popup entry instead of submitting; if the composer
+still shows the command unsent, send Enter again.
+
+| Stage | Invocation |
+|---|---|
+| wayfinder | `$wayfinder` |
+| codebase-design | `$codebase-design` |
+| to-spec | `$to-spec` |
+| implement | `$implement` |
+| code-review | `$code-review` |
+| simplify | `$simplify` |
+| grill-me | `$grill-me` |
+BLOCK
+      ;;
+    opencode|pi)
+      cat <<'BLOCK'
+This harness has no verified slash/skill-command syntax. Invoke each stage in
+plain natural language, naming the skill explicitly by name so it can be
+matched and loaded.
+
+| Stage | Invocation |
+|---|---|
+| wayfinder | say "load the wayfinder skill" |
+| codebase-design | say "load the codebase-design skill" |
+| to-spec | say "load the to-spec skill" |
+| implement | say "load the implement skill" |
+| code-review | say "load the code-review skill" |
+| simplify | say "load the simplify skill" |
+| grill-me | say "load the grill-me skill" |
+BLOCK
+      ;;
+    agy|cursor)
+      cat <<'BLOCK'
+This harness has no verified skill-invocation form in firstmate's harness
+knowledge yet. Invoke each stage in plain natural language, naming the skill
+explicitly by name so it can be matched and loaded; if the harness turns out
+to have its own native skill/command mechanism, prefer that once discovered.
+
+| Stage | Invocation |
+|---|---|
+| wayfinder | say "load the wayfinder skill" |
+| codebase-design | say "load the codebase-design skill" |
+| to-spec | say "load the to-spec skill" |
+| implement | say "load the implement skill" |
+| code-review | say "load the code-review skill" |
+| simplify | say "load the simplify skill" |
+| grill-me | say "load the grill-me skill" |
+BLOCK
+      ;;
+    *)
+      cat <<'BLOCK'
+This task's harness could not be determined at brief-scaffolding time. Do not
+guess a slash-command syntax: ask firstmate which harness this task is
+running on (append `needs-decision: which harness am I running on?` to the
+status file) before invoking the first pipeline skill. Until you get an
+answer, invoke each stage in plain natural language, naming the skill
+explicitly by name.
+
+| Stage | Invocation |
+|---|---|
+| wayfinder | say "load the wayfinder skill" |
+| codebase-design | say "load the codebase-design skill" |
+| to-spec | say "load the to-spec skill" |
+| implement | say "load the implement skill" |
+| code-review | say "load the code-review skill" |
+| simplify | say "load the simplify skill" |
+| grill-me | say "load the grill-me skill" |
+BLOCK
+      ;;
+  esac
+}
+
+SKILL_INVOCATION=$(build_skill_invocation "$HARNESS")
 
 # ---------------------------------------------------------------------------
 # Project-file readers – derive build/test/language/conventions/sharp-edges
@@ -592,6 +739,12 @@ Each stage appends a one-line status: \`working: {stage} complete\`. The next
 stage does not start until the current one is done. If a stage reveals that an
 earlier stage was wrong, loop back — the pipeline is a spiral, not a waterfall.
 
+# Skill invocation
+Your harness for this task is \`$HARNESS\`. Use the invocation form below for
+every stage of the skills pipeline above — do not guess a different syntax.
+
+$SKILL_INVOCATION
+
 # Tools
 $TOOLS_SECTION
 # Phased execution
@@ -753,6 +906,12 @@ runs in order, no shortcuts:
 Each stage appends a one-line status: \`working: {stage} complete\`. The next
 stage does not start until the current one is done. If a stage reveals that an
 earlier stage was wrong, loop back — the pipeline is a spiral, not a waterfall.
+
+# Skill invocation
+Your harness for this task is \`$HARNESS\`. Use the invocation form below for
+every stage of the skills pipeline above — do not guess a different syntax.
+
+$SKILL_INVOCATION
 
 # Tools
 $TOOLS_SECTION
