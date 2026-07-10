@@ -12,6 +12,7 @@
 #   8. No-op without meta file
 #   9. No stages yet (fresh spawn, no status file)
 #  10. Graceful handling of corrupt marker file
+#  11. Status file exists but has no working: lines
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -200,6 +201,23 @@ echo "garbage" > "$HOME10/state/.stage-enforce-task10"
 out=$(run_enforce "$HOME10" "task10")
 [ -z "$out" ] || fail "10: expected silent with corrupt marker (treated as fresh), got: $out"
 pass "10: corrupt marker — treated as fresh"
+
+# 11. Status file exists but has no working: lines (only non-stage lines)
+echo "== 11: no working lines =="
+HOME11=$(mktemp -d "$TMP_ROOT/home11.XXXXXX")
+setup_home "$HOME11" "task11"
+write_status "$HOME11" "task11" "needs-decision: which approach?" "working: wayfinder complete"
+# Remove the working: line from the status — simulate a crewmate that only has a decision pending.
+printf 'needs-decision: which approach?\n' > "$HOME11/state/task11.status"
+# Set up an old marker with a previous working: line.
+old_epoch=$(( $(date +%s) - 400 ))
+write_enforce_file "$HOME11" "task11" "working: wayfinder complete" "$old_epoch" "nudged"
+# The last working: line is now gone — this counts as a "new stage" (empty).
+out=$(run_enforce "$HOME11" "task11")
+[ -z "$out" ] || fail "11: expected silent when working: lines disappear, got: $out"
+# Timer should reset.
+assert_grep "tracking" "$HOME11/state/.stage-enforce-task11" "11: expected tracking state after working lines disappear"
+pass "11: no working lines — timer resets"
 
 echo ""
 echo "all tests passed"

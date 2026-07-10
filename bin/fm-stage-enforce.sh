@@ -139,7 +139,7 @@ fi
 
 if [ "$elapsed" -ge $(( NUDGE_MINUTES * 60 )) ] && [ "$enforce_state" = tracking ]; then
   minutes=$(( elapsed / 60 ))
-  stage_desc="${last_stage#working: }"
+  stage_desc="${last_stage#working:}"
   stage_desc="${stage_desc#"${stage_desc%%[![:space:]]*}"}"  # trim leading whitespace
   [ -n "$stage_desc" ] || stage_desc="no stages reported"
 
