@@ -12,7 +12,6 @@ set -u
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 WATCHDOG="$ROOT/bin/fm-watchdog.sh"
-WAKE_LIB="$ROOT/bin/fm-wake-lib.sh"
 TMP_ROOT=$(fm_test_tmproot fm-watchdog-tests)
 
 # Run the watchdog for up to N seconds, capturing stdout and stderr, then kill
@@ -34,7 +33,8 @@ run_watchdog_cycle() {
 
 # Read and drain the wake queue, returning its content.
 drain_queue() {
-  local state=$1 queue="$state/.wake-queue"
+  local state=$1
+  local queue="$state/.wake-queue"
   if [ -e "$queue" ]; then
     cat "$queue" 2>/dev/null
     : > "$queue"
@@ -115,12 +115,11 @@ test_missing_beacon_triggers() {
 # Case 4: Missing wake library — watchdog survives, warns to stderr
 # ---------------------------------------------------------------------------
 test_missing_wake_library_survives() {
-  local dir state out fakebin bin_dir watchdog_copy
+  local dir state out bin_dir watchdog_copy
   dir="$TMP_ROOT/missing-lib"
   state="$dir/state"
-  fakebin="$dir/fakebin"
   bin_dir="$dir/bin"
-  mkdir -p "$state" "$fakebin" "$bin_dir"
+  mkdir -p "$state" "$bin_dir"
 
   touch -t 202001010000 "$state/.last-watcher-beat"
   : > "$state/.wake-queue"
