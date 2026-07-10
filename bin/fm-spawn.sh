@@ -344,7 +344,7 @@ model_flag_for_harness() {
   local harness=$1 model=$2
   [ -n "$model" ] && [ "$model" != default ] || return 0
   case "$harness" in
-    claude|ct|agy|cursor|codex|opencode|pi|grok)
+    claude|ca|ct|agy|cursor|codex|opencode|pi|grok)
       printf -- '--model %s ' "$(shell_quote "$model")"
       ;;
   esac
@@ -354,7 +354,7 @@ effort_flag_for_harness() {
   local harness=$1 effort=$2
   [ -n "$effort" ] && [ "$effort" != default ] || return 0
   case "$harness" in
-    claude|ct)
+    claude|ca|ct)
       case "$effort" in
         low|medium|high|xhigh|max) printf -- '--effort %s ' "$(shell_quote "$effort")" ;;
       esac
