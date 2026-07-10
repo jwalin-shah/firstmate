@@ -171,8 +171,12 @@ assert_contains "$output" "non-existent-missing" \
 assert_contains "$output" "ship-no-window" \
   "check 7: names meta missing window="
 
-# Summary line: 4 violated checks (2,4,5,7), 3 passing (1,3,6)
-assert_contains "$output" "fm-verify: 3 pass, 4 violated" \
+# Check 8 now runs without yq (awk parse) and delegates-to-make-test passes.
+assert_contains "$output" "PASS: test-command-consistency" \
+  "check 8: test-command-consistency verified (no yq skip)"
+
+# Summary line: 4 violated checks (2,4,5,7), 4 passing (1,3,6,8)
+assert_contains "$output" "fm-verify: 4 pass, 4 violated" \
   "summary line matches expected counts"
 
 RC=$(echo "$output" | sed -n 's/^EXIT_CODE=//p')
@@ -207,7 +211,7 @@ assert_contains "$output_clean" "PASS: crew-harness-validity" \
   "clean: harness configs valid (none present)"
 assert_contains "$output_clean" "PASS: tool-availability" \
   "clean: all tools available"
-assert_contains "$output_clean" "fm-verify: 7 pass, 0 violated" \
+assert_contains "$output_clean" "fm-verify: 8 pass, 0 violated" \
   "clean: all pass"
 
 RC_CLEAN=$(echo "$output_clean" | sed -n 's/^EXIT_CODE=//p')

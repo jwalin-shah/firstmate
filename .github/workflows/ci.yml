@@ -19,7 +19,12 @@ jobs:
 
   tests:
     name: Behavior tests
-    runs-on: ubuntu-latest
+    # macOS matches the no-mistakes gate's platform. The suite builds macOS-only
+    # Go helpers (fm-kqueue-watch uses kqueue syscalls that do not exist on
+    # Linux), so it must run on darwin to build-before-test - which is the whole
+    # point: the old ubuntu raw loop ran the binary-dependent tests against
+    # helpers it never built.
+    runs-on: macos-latest
     # The suite should finish in ~2-3 minutes; this generous cap fails loudly on a
     # hung watcher or tmux test instead of riding GitHub's 360-minute default.
     timeout-minutes: 15
@@ -27,19 +32,16 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version: 'stable'
       - name: Require tmux for e2e tests
         run: |
           set -eu
-          command -v tmux >/dev/null || {
-            echo "::error::tmux is required for real afk injection e2e coverage"
-            exit 1
-          }
+          command -v tmux >/dev/null || brew install tmux
           tmux -V
-      - run: |
-          set -eu
-          for test_script in tests/*.test.sh; do
-            "$test_script"
-          done
+      - name: make test (builds Go helpers before running the suite)
+        run: make test
 
   invariants:
     name: Repo invariants

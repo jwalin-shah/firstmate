@@ -151,9 +151,20 @@ check_test_command_consistency() {
   local yml="$FM_ROOT/.no-mistakes.yaml" mk="$FM_ROOT/Makefile"
   [ -f "$yml" ] || { pass "test-command-consistency (no .no-mistakes.yaml)"; return; }
   [ -f "$mk" ] || { pass "test-command-consistency (no Makefile)"; return; }
-  command -v yq >/dev/null 2>&1 || { pass "test-command-consistency (yq not installed, skipping)"; return; }
+  # Read .commands.test without depending on yq (absent under CI and the test's
+  # restricted PATH, where the old skip silently disabled this invariant). awk
+  # is always present; scope the read to the commands: block so the unrelated
+  # top-level test: evidence key can never be mistaken for the test command.
   local test_cmd
-  test_cmd=$(yq -r '.commands.test // ""' "$yml" 2>/dev/null)
+  test_cmd=$(awk '
+    /^[^[:space:]#]/ { in_cmd = ($0 ~ /^commands:/) }
+    in_cmd && /^[[:space:]]+test:/ {
+      sub(/^[[:space:]]+test:[[:space:]]*/, "")
+      sub(/[[:space:]]*(#.*)?$/, "")
+      gsub(/^["'\'']|["'\'']$/, "")
+      print; exit
+    }
+  ' "$yml" 2>/dev/null)
   [ -n "$test_cmd" ] || { pass "test-command-consistency (no test override)"; return; }
   # If the yaml delegates to make test, we're good.
   echo "$test_cmd" | grep -q 'make test' && { pass "test-command-consistency (delegates to make test)"; return; }
