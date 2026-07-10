@@ -418,9 +418,8 @@ fi
 crew=
 [ -f "$CONFIG/crew-harness" ] && crew=$(tr -d '[:space:]' < "$CONFIG/crew-harness" || true)
 [ -n "$crew" ] && [ "$crew" != "default" ] && echo "CREW_HARNESS_OVERRIDE: $crew"
-if crew_dispatch_validate; then
-  "$SCRIPT_DIR/fm-verify.sh" >/dev/null 2>&1 || echo "fm-verify: WARNINGS"
-fi
+crew_dispatch_validate
+"$SCRIPT_DIR/fm-verify.sh" >/dev/null 2>&1 || echo "fm-verify: WARNINGS"
 if ! fm_backlog_backend_manual "$CONFIG"; then
   if fm_tasks_axi_compatible; then
     echo "TASKS_AXI: available"
