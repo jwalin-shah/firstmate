@@ -186,7 +186,6 @@ install_cmd() {
   esac
 }
 
-BACKEND=$(fm_backend_name)
 TOOLS="tmux node gh treehouse no-mistakes gh-axi chrome-devtools-axi lavish-axi"
 NO_MISTAKES_MIN_MAJOR=1
 NO_MISTAKES_MIN_MINOR=31
