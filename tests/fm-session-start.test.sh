@@ -14,7 +14,6 @@
 #   - status-tail bounding, default and FM_SESSION_START_STATUS_TAIL override
 #   - orphan status logs whose task meta has already disappeared
 #   - per-task endpoint-liveness lines for a live and a dead recorded target,
-#     tmux and herdr both
 #   - composition: the script invokes the real fm-lock.sh/fm-bootstrap.sh/
 #     fm-wake-drain.sh (their real, distinctive output appears verbatim), it
 #     does not reimplement their logic
@@ -123,23 +122,6 @@ SH
   chmod +x "$fakebin/tmux"
 }
 
-# make_fake_herdr <fakebin> <live-pane>: `herdr pane get <pane>` succeeds only
-# for the given pane id - the exact primitive fm_backend_target_exists uses
-# for a herdr endpoint liveness read. No version/server-start calls: a
-# liveness check must never auto-start a server (fm-backend.sh's contract).
-make_fake_herdr() {
-  local fakebin=$1 live=$2
-  cat > "$fakebin/herdr" <<SH
-#!/usr/bin/env bash
-set -u
-if [ "\${1:-}" = pane ] && [ "\${2:-}" = get ]; then
-  [ "\${3:-}" = "$live" ] && exit 0
-  exit 1
-fi
-exit 1
-SH
-  chmod +x "$fakebin/herdr"
-}
 
 run_session_start() {  # <home> <root> <path>
   local home=$1 root=$2 path=$3
@@ -347,9 +329,6 @@ EOF
 
   pass "orphan status logs are printed once with bounded tails"
 }
-
-# --- endpoint liveness: tmux and herdr, live and dead ------------------------
-
 test_endpoint_liveness_tmux() {
   local rec root home fakebin out
   rec=$(new_world liveness-tmux)
@@ -368,26 +347,6 @@ EOF
   assert_contains "$out" "endpoint: dead (backend=tmux window=fm-sess:dead-window)" "dead tmux endpoint not reported dead"
 
   pass "tmux endpoint liveness is reported per task: alive for a live window, dead for a gone one"
-}
-
-test_endpoint_liveness_herdr() {
-  local rec root home fakebin out
-  rec=$(new_world liveness-herdr)
-  IFS='|' read -r root home fakebin <<EOF
-$rec
-EOF
-  make_fake_toolchain "$fakebin"
-  make_fake_ps_claude "$fakebin"
-  make_fake_herdr "$fakebin" "p-live"
-
-  printf 'window=sess:p-live\nkind=ship\nbackend=herdr\n' > "$home/state/task-live.meta"
-  printf 'window=sess:p-dead\nkind=ship\nbackend=herdr\n' > "$home/state/task-dead.meta"
-
-  out=$(run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
-  assert_contains "$out" "endpoint: alive (backend=herdr window=sess:p-live)" "live herdr endpoint not reported alive"
-  assert_contains "$out" "endpoint: dead (backend=herdr window=sess:p-dead)" "dead herdr endpoint not reported dead"
-
-  pass "herdr endpoint liveness is reported per task: alive for a live pane, dead for a gone one"
 }
 
 # --- composition: real scripts run, not reimplemented ------------------------
@@ -481,7 +440,6 @@ test_output_ordering_diagnostics_lead
 test_status_tail_bounding
 test_orphan_status_logs_are_printed
 test_endpoint_liveness_tmux
-test_endpoint_liveness_herdr
 test_composition_invokes_real_scripts
 test_fleet_digest_empty_fleet
 test_next_step_sources_x_mode_cadence

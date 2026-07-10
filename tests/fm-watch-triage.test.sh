@@ -99,9 +99,8 @@ test_stale_is_terminal_classifier() {
   dir=$(make_case classify-stale); state="$dir/state"
   printf 'done: ready in branch fm/x\n' > "$state/term.status"
   stale_is_terminal "sess:fm-term" "$state" || fail "terminal stale status not classified terminal"
-  fm_write_meta "$state/herdr-term.meta" "window=default:w1:p2" "backend=herdr"
-  printf 'done: ready in branch fm/herdr\n' > "$state/herdr-term.status"
-  stale_is_terminal "default:w1:p2" "$state" || fail "terminal herdr stale status not resolved through metadata"
+  fm_write_meta "$state/tmux-term.meta" "window=default:w1:p2" "backend=tmux"
+  printf 'done: ready in branch fm/feat-x\n' > "$state/tmux-term.status"
   printf 'working: compiling\n' > "$state/nonterm.status"
   stale_is_terminal "sess:fm-nonterm" "$state" && fail "non-terminal stale classified terminal"
   stale_is_terminal "sess:fm-missing" "$state" && fail "stale with no status classified terminal"
@@ -129,8 +128,6 @@ test_classifier_primitives() {
   status_is_captain_relevant "done: b" || fail "done: not recognized as captain-relevant"
   status_is_captain_relevant "working: b" && fail "working: wrongly recognized as captain-relevant"
   [ "$(window_to_task "sess:fm-fix-login-k3")" = "fix-login-k3" ] || fail "window_to_task did not strip session+fm- prefix"
-  fm_write_meta "$state/herdr-task.meta" "window=default:w1:p2" "backend=herdr"
-  [ "$(window_to_task "default:w1:p2" "$state")" = "herdr-task" ] || fail "window_to_task did not resolve opaque backend target through metadata"
   FM_CAPTAIN_RE='custom-verb:' status_is_captain_relevant "custom-verb: x" || fail "FM_CAPTAIN_RE override not honored"
   FM_CAPTAIN_RE='custom-verb:' status_is_captain_relevant "done: x" && fail "FM_CAPTAIN_RE override did not replace the default verb set"
   pass "classifier primitives: last line, captain-relevance, window->task, FM_CAPTAIN_RE override"
@@ -319,7 +316,6 @@ test_terminal_stale_surfaced() {
 }
 
 # --- stale pane, STALE terminal status overridden by an active run: absorbed ---
-# Regression for the 2026-07 herdr false-surface incidents: a crew's own status
 # log gets no new entry once firstmate hands it to a no-mistakes validation
 # (AGENTS.md's sparse status-reporting contract), so the log keeps showing its
 # pre-validation "done:" line as the LAST line for the run's entire (possibly

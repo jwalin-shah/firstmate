@@ -15,8 +15,6 @@ WATCH="$ROOT/bin/fm-watch.sh"
 DRAIN="$ROOT/bin/fm-wake-drain.sh"
 
 TMP_ROOT=$(fm_test_tmproot fm-wake-tests)
-
-
 test_concurrent_append_and_drain() {
   local dir state out1 out2 all pids i pid count unique malformed
   dir=$(make_case concurrent)

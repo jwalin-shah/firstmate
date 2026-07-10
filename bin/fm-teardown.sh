@@ -773,7 +773,7 @@ rm -f "$STATE/$ID.status" "$STATE/$ID.turn-ended" "$STATE/$ID.check.sh" "$STATE/
 # Purge per-task watcher suppression markers that accumulate unboundedly across
 # teardowns. The counter/hash/stale keys are derived from the window target the
 # same way fm-watch.sh builds them (tr ':/.' '___'), so this matches both the
-# tmux (<session>:fm-<id>) and herdr (<session>:<pane-id>) target shapes; the
+# tmux (<session>:fm-<id>) target shape; the
 # seen markers key on the bare task ID and the heartbeat marker on the task ID.
 WKEY=$(printf '%s' "$T" | tr ':/.' '___')
 rm -f "$STATE/.count-$WKEY" "$STATE/.hash-$WKEY" "$STATE/.stale-$WKEY" "$STATE/.stale-since-$WKEY" \

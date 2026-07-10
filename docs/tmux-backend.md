@@ -7,7 +7,7 @@ This is the setup guide; for the shared runtime-backend abstraction and selectio
 
 tmux is a terminal multiplexer.
 Firstmate gives each crewmate its own tmux window inside a session, so you can attach and watch a task work, or type into its window to intervene directly.
-Pick tmux unless you have a specific reason to try an experimental backend (herdr) - it is the fully verified reference path for secondmate homes.
+Pick tmux - it is the fully verified reference path for secondmate homes.
 
 ## Prerequisites
 
@@ -24,7 +24,6 @@ The first mate detects missing tools at session start and offers to install them
 tmux is the hard default: it needs no explicit selection.
 It is also what firstmate falls back to when nothing else is set - no local `config/backend` file, no `FM_BACKEND`, no explicit `--backend` flag firstmate passes internally when it spawns a task - and runtime auto-detection (see below) does not pick anything either.
 You can still select it explicitly by putting `tmux` in a local `config/backend` file - the durable way to pick it - or by exporting `FM_BACKEND=tmux` when you launch your harness for a one-off session; telling the first mate in chat to use tmux also works.
-This mainly matters as an opt-out of herdr's runtime auto-detection (see [`docs/herdr-backend.md`](herdr-backend.md)).
 
 ## First run
 

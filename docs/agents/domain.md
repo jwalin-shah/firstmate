@@ -8,7 +8,7 @@ agent working on this codebase must understand.
 
 Firstmate is a bash-based agent orchestration system. It spawns LLM
 crewmates in isolated git worktrees via treehouse, supervises them
-through tmux or herdr, manages task lifecycles (scout vs. ship), enforces
+through tmux, manages task lifecycles (scout vs. ship), enforces
 verification gates, and integrates with no-mistakes for CI/CD validation.
 
 The user speaks to a single agent (the "first mate"), and that agent
@@ -56,7 +56,7 @@ First Mate (AGENTS.md + bin/ scripts)
     |
     +-- fm-spawn.sh --> treehouse worktree
     |
-    +-- fm-watch.sh --> tmux/herdr supervision
+    +-- fm-watch.sh --> tmux supervision
     |
     +-- fm-brief.sh --> task/scout/secondmate brief scaffolds
     |
@@ -92,7 +92,6 @@ Crewmate (LLM agent in isolated worktree)
 ### Runtime backends
 
 - **tmux** -- verified reference backend. Task windows named `fm-<id>`.
-- **herdr** -- experimental backend. Workspace-per-home, tab-per-task.
 
 ### Worktree isolation
 
