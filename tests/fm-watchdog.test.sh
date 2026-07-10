@@ -37,7 +37,7 @@ drain_queue() {
   local queue="$state/.wake-queue"
   if [ -e "$queue" ]; then
     cat "$queue" 2>/dev/null
-    : > "$queue"
+    : >"$queue"
   fi
 }
 
@@ -53,7 +53,7 @@ test_fresh_beacon_silent() {
   # Touch a fresh beacon and an empty wake queue so fm_wake_append doesn't
   # fail on a missing queue file's lock dir.
   touch "$state/.last-watcher-beat"
-  : > "$state/.wake-queue"
+  : >"$state/.wake-queue"
 
   # Run one cycle with a short interval
   out=$(run_watchdog_cycle "$state" 6)
@@ -78,7 +78,7 @@ test_stale_beacon_writes_wake() {
   # Create a beacon with an old mtime using touch -t (portable).
   # The beacon must be older than FM_WATCHDOG_GRACE (default 120s).
   touch -t 202001010000 "$state/.last-watcher-beat"
-  : > "$state/.wake-queue"
+  : >"$state/.wake-queue"
 
   # Run with a low grace so we don't need to wait 120+ seconds
   out=$(FM_WATCHDOG_GRACE=1 run_watchdog_cycle "$state" 6)
@@ -101,7 +101,7 @@ test_missing_beacon_triggers() {
   mkdir -p "$state"
 
   # No .last-watcher-beat file at all
-  : > "$state/.wake-queue"
+  : >"$state/.wake-queue"
 
   out=$(FM_WATCHDOG_GRACE=1 run_watchdog_cycle "$state" 6)
   queue_out=$(drain_queue "$state")
@@ -122,7 +122,7 @@ test_missing_wake_library_survives() {
   mkdir -p "$state" "$bin_dir"
 
   touch -t 202001010000 "$state/.last-watcher-beat"
-  : > "$state/.wake-queue"
+  : >"$state/.wake-queue"
 
   # Copy the watchdog into a bin/ dir that does NOT contain fm-wake-lib.sh,
   # so SCRIPT_DIR resolves to that dir and the library source fails.
@@ -130,8 +130,9 @@ test_missing_wake_library_survives() {
   cp "$WATCHDOG" "$watchdog_copy"
   chmod +x "$watchdog_copy"
 
-  out=$(FM_STATE_OVERRIDE="$state" FM_WATCHDOG_GRACE=1 FM_WATCHDOG_INTERVAL=2 \
-    "$watchdog_copy" 2>&1 &
+  out=$(
+    FM_STATE_OVERRIDE="$state" FM_WATCHDOG_GRACE=1 FM_WATCHDOG_INTERVAL=2 \
+      "$watchdog_copy" 2>&1 &
     pid=$!
     sleep 5
     kill "$pid" 2>/dev/null || true

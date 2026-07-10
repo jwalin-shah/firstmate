@@ -45,7 +45,7 @@ beacon_age() {
     echo 999999
     return 0
   fi
-  echo $(( $(date +%s) - m ))
+  echo $(($(date +%s) - m))
 }
 
 # Source the wake library for fm_wake_append. Best-effort: if the library is
@@ -91,7 +91,7 @@ while [ "${_exiting:-0}" -eq 0 ]; do
       _chunk=5
     fi
     sleep "${_chunk}"
-    _remaining=$(( _remaining - _chunk ))
+    _remaining=$((_remaining - _chunk))
   done
 done
 
