@@ -5,8 +5,12 @@
 # crashed the daemon). Mirrors .github/workflows/ci.yml: iterate every
 # tests/*.test.sh, run each, and fail the step if any one exits non-zero. The
 # e2e tests need tmux on PATH, which the firstmate environment provides.
+# Use `make test` so `make build` runs first (Go binaries like mm-event-sub
+# and fm-kqueue-watch must be compiled before mm-watch.test.sh). The raw shell
+# loop here was the root cause of every crewmate pipeline looping at test:fixing
+# — the binaries were never built before the test step ran.
 commands:
-  test: 'command -v tmux >/dev/null || { echo "tmux is required for e2e tests" >&2; exit 1; }; tmux -V; rc=0; for t in tests/*.test.sh; do echo "== $t =="; bash "$t" || rc=1; done; exit "$rc"'
+  test: 'make test'
 
 # Keep test evidence out of this repo; it stays in a temp dir instead.
 test:
