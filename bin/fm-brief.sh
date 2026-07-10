@@ -409,6 +409,19 @@ The report is the only thing that survives, so anything worth keeping must be in
 
 # Tools
 $TOOLS_SECTION
+# Evidence rules
+The report lives or dies by its evidence. Every factual claim must cite the exact
+command that proves it — not "the build passes" but "\`go build ./...\` exit 0,
+output follows." If you cannot run the verifying command, say so and explain why.
+
+**For claims about tools, ownership, or external systems** (\`git remote -v\`,
+\`head -5 README.md\`, \`which <tool>\`): run the command and paste the output.
+"Do not know" is always better than a wrong claim. The captain would rather have
+an honest gap than a confident falsehood.
+
+Before reporting \`done\`, review your report and ask: is every factual statement
+backed by machine output in the report? If not, add it.
+
 # Definition of done
 Write your findings to \`$DATA/$ID/report.md\`.
 The report must stand alone: what you did, what you found, the evidence (commands run, output, file:line references), and what you recommend.
@@ -667,6 +680,28 @@ Keep it proportionate: skip \`AGENTS.md\` edits for trivial tasks that produced 
 
 # Tools
 $TOOLS_SECTION
+# Proof of action
+Before reporting \`done\`, run each applicable gate in the worktree. Copy the exact
+output — no summarizing, no "it passes." Machine evidence only. An unchecked gate
+blocks teardown the same as a failed gate.
+
+**Required gates (run every one that applies to this project):**
+- [ ] Build: the project builds cleanly (paste the exact command and its output)
+- [ ] Tests: tests pass (paste the output showing pass count)
+- [ ] Lint/vet: no new warnings (paste the output)
+- [ ] \`tldr dead\`: no unexpected dead functions. Explain each finding.
+- [ ] \`tldr smells\`: no new severity-2+ smells. Explain each finding.
+- [ ] \`ccc status\`: project indexed, chunk count is current
+- [ ] \`githits search\`: prior art checked for the approach used. Paste the query and what you found.
+
+**For every factual claim about a tool, ownership, or external system:** cite the
+exact command that proves it. "Treehouse is from Kun Chen" is not a fact until
+\`git remote -v\` shows \`upstream = kunchenguid/treehouse\`.
+
+**Gate fill checklist:** before reporting \`done\`, replace each \`- [ ]\` with
+\`- [x]\` after running the command AND pasting its exact output below. An
+unchecked box is a blocker.
+
 $DOD
 EOF
   echo "scaffolded: $BRIEF (ship, mode=$MODE; replace {what}, {acceptance}, {constraints})"
