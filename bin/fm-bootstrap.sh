@@ -420,8 +420,12 @@ crew=
 [ -n "$crew" ] && [ "$crew" != "default" ] && echo "CREW_HARNESS_OVERRIDE: $crew"
 crew_dispatch_validate
 dispatch_ok=$?
-if [ "$dispatch_ok" -eq 0 ] && ! "$SCRIPT_DIR/fm-verify.sh" >/dev/null 2>&1; then
-  echo "fm-verify: WARNINGS"
+if [ "$dispatch_ok" -eq 0 ]; then
+  if "$SCRIPT_DIR/fm-verify.sh" >/dev/null 2>&1; then
+    echo "fm-verify: OK" >&2
+  else
+    echo "fm-verify: WARNINGS" >&2
+  fi
 fi
 if ! fm_backlog_backend_manual "$CONFIG"; then
   if fm_tasks_axi_compatible; then
