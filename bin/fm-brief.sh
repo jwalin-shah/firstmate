@@ -739,6 +739,23 @@ Each stage appends a one-line status: \`working: {stage} complete\`. The next
 stage does not start until the current one is done. If a stage reveals that an
 earlier stage was wrong, loop back — the pipeline is a spiral, not a waterfall.
 
+**Write every stage's output to a file.** This directory is in the firstmate
+home, NOT the worktree, so it survives teardown. Without these files, there is
+no record of what you found or why you made each decision.
+
+| Stage | Output file |
+|---|---|
+| wayfinder | \`$DATA/$ID/phase-1-wayfinder.md\` |
+| codebase-design | \`$DATA/$ID/phase-2-design.md\` |
+| to-spec | \`$DATA/$ID/phase-3-spec.md\` |
+| implement | the code itself (committed on your branch) |
+| code-review | \`$DATA/$ID/phase-5-review.md\` |
+| simplify | \`$DATA/$ID/phase-6-simplify.md\` |
+| grill-me | \`$DATA/$ID/phase-7-grill.md\` |
+
+Create \`$DATA/$ID/\` if it does not exist. These files are the audit trail.
+Scout reports go to \`$DATA/$ID/report.md\` as stated in the Definition of done.
+
 # Skill invocation
 Your harness for this task is \`$HARNESS\`. Use the invocation form below for
 every stage of the skills pipeline above — do not guess a different syntax.
@@ -906,6 +923,23 @@ runs in order, no shortcuts:
 Each stage appends a one-line status: \`working: {stage} complete\`. The next
 stage does not start until the current one is done. If a stage reveals that an
 earlier stage was wrong, loop back — the pipeline is a spiral, not a waterfall.
+
+**Write every stage's output to a file.** This directory is in the firstmate
+home, NOT the worktree, so it survives teardown. Without these files, there is
+no record of what you found or why you made each decision.
+
+| Stage | Output file |
+|---|---|
+| wayfinder | \`$DATA/$ID/phase-1-wayfinder.md\` |
+| codebase-design | \`$DATA/$ID/phase-2-design.md\` |
+| to-spec | \`$DATA/$ID/phase-3-spec.md\` |
+| implement | the code itself (committed on your branch) |
+| code-review | \`$DATA/$ID/phase-5-review.md\` |
+| simplify | \`$DATA/$ID/phase-6-simplify.md\` |
+| grill-me | \`$DATA/$ID/phase-7-grill.md\` |
+
+Create \`$DATA/$ID/\` if it does not exist. These files are the audit trail.
+Scout reports go to \`$DATA/$ID/report.md\` as stated in the Definition of done.
 
 # Skill invocation
 Your harness for this task is \`$HARNESS\`. Use the invocation form below for
