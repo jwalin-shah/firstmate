@@ -540,7 +540,11 @@ A ship task's path from `done` to landed on `main` is set by the project's `mode
 - **direct-PR** - no pipeline. The crewmate pushes and opens the PR itself (its brief says so) and reports `done: PR <url>`. Skip the Validate step and go straight to PR ready (run `fm-pr-check`, relay the PR). Teardown uses the normal landed-work check.
 - **local-only** - no remote, no PR. The crewmate stops at `done: ready in branch fm/<id>`. Review the diff with `bin/fm-review-diff.sh <id>`, relay a one-paragraph summary to the captain, and on approval run `bin/fm-merge-local.sh <id>` to fast-forward local `main` (it refuses anything but a clean fast-forward - if it does, have the crewmate rebase). No `fm-pr-check`. Then teardown, whose safety check requires the branch already merged into local `main`, OR the work pushed to any remote (a fork counts - relevant for upstream-contribution PRs on a local-only-registered project).
 
-When reviewing any crewmate branch diff, use `bin/fm-review-diff.sh <id>` rather than `git diff <default>...branch` directly.
+Before reviewing any crewmate branch diff, run `bin/fm-bridge-verify.sh <id>` as a machine gate ahead of your own read.
+It runs `bridge verify` against the task's project clone (the `project=` path in meta, not the worktree) as a second pair of eyes on the reported `done:`.
+If `bridge` is not installed, the gate is a silent skip and you proceed straight to review-diff exactly as before.
+If gates are red, it prints `BLOCKED: bridge verify failed - gates are red`; report that to the captain instead of relaying a diff summary, and do not run `fm-review-diff.sh` until it is resolved.
+Then use `bin/fm-review-diff.sh <id>` rather than `git diff <default>...branch` directly.
 Pooled clones keep their local default refs frozen at clone time and can lag `origin`; the helper always compares against the authoritative base.
 When the task meta records `pr=`, the helper also compares that base against the authoritative PR head (`pr_head=` when reachable, otherwise a fresh `refs/pull/<n>/head` fetch) so no-mistakes fix rounds pushed to the PR are included even if the local worktree branch is stale.
 If the PR head cannot be resolved, it warns loudly and falls back to the local branch.
@@ -711,7 +715,7 @@ This exception is narrow: ordinary crewmates still trip stale detection when the
 **Watcher liveness is guarded, not just disciplined.**
 Arming the watcher is the last action of every wake-handling turn - but the protocol no longer relies on remembering that.
 While running, `fm-watch.sh` touches `state/.last-watcher-beat` every poll cycle.
-The supervision scripts (`fm-peek`, `fm-send`, `fm-spawn`, `fm-teardown`, `fm-pr-check`, `fm-promote`, `fm-review-diff`, `fm-fleet-sync`, `fm-update`) call `bin/fm-guard.sh` first, which warns to stderr when any task is in flight (`state/*.meta` exists) but queued wakes are pending, or that beacon is missing or older than `FM_GUARD_GRACE` (default 300s).
+The supervision scripts (`fm-peek`, `fm-send`, `fm-spawn`, `fm-teardown`, `fm-pr-check`, `fm-promote`, `fm-review-diff`, `fm-bridge-verify`, `fm-fleet-sync`, `fm-update`) call `bin/fm-guard.sh` first, which warns to stderr when any task is in flight (`state/*.meta` exists) but queued wakes are pending, or that beacon is missing or older than `FM_GUARD_GRACE` (default 300s).
 `bin/fm-wake-drain.sh` runs the same guard after it drains, so the liveness check also fires on a drain-and-handle turn that runs no other supervision script, narrowing the window in which a lapsed chain can hide; the grace beacon keeps it silent right after a normal fire and it warns only on a genuine stale-beyond-grace lapse.
 The no-watcher case leads with a prominent, bordered ●-marked banner (in-flight count, beacon age, and the exact one-line re-arm command) so it reads as an alarm rather than a buried stderr line you can skim past.
 So the next time you touch the fleet with queued wakes or no watcher alive, the tool output itself tells you what to do - a pull-based guard that works on any harness, since it rides the script output you already read rather than a harness-specific hook.
