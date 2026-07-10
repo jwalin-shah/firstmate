@@ -40,8 +40,8 @@ write_status() {
 }
 
 write_enforce_file() {
-  local home=$1 id=$2 stage=$3 epoch=$4 state=$5 nudge_epoch=${6:-0}
-  printf '%s\t%s\t%s\t%s\n' "$stage" "$epoch" "$state" "$nudge_epoch" > "$home/state/.stage-enforce-$id"
+  local home=$1 id=$2 stage=$3 epoch=$4 state=$5
+  printf '%s\t%s\t%s\n' "$stage" "$epoch" "$state" > "$home/state/.stage-enforce-$id"
 }
 
 # Create a fake fm-send.sh that records its arguments.

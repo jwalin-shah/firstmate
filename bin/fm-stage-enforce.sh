@@ -72,15 +72,11 @@ fi
 prev_stage=""
 first_seen_epoch=0
 enforce_state=tracking
-nudge_epoch=0
 
 if [ -f "$ENFORCE_FILE" ]; then
-  IFS=$(printf '\t') read -r prev_stage first_seen_epoch enforce_state nudge_epoch < "$ENFORCE_FILE" 2>/dev/null || true
+  IFS=$(printf '\t') read -r prev_stage first_seen_epoch enforce_state < "$ENFORCE_FILE" 2>/dev/null || true
   case "$first_seen_epoch" in
     ''|*[!0-9]*) first_seen_epoch=0 ;;
-  esac
-  case "$nudge_epoch" in
-    ''|*[!0-9]*) nudge_epoch=0 ;;
   esac
   case "$enforce_state" in
     tracking|nudged|killed) ;;
@@ -91,7 +87,7 @@ fi
 # --- new stage detected → reset timer -----------------------------------------
 
 if [ "$last_stage" != "$prev_stage" ]; then
-  printf '%s\t%s\t%s\t%s\n' "$last_stage" "$now" "tracking" "0" > "$ENFORCE_FILE"
+  printf '%s\t%s\t%s\n' "$last_stage" "$now" "tracking" > "$ENFORCE_FILE"
   exit 0
 fi
 
@@ -99,7 +95,7 @@ fi
 # A first_seen_epoch of 0 means uninitialized — treat as just now.
 if [ "$first_seen_epoch" -eq 0 ] 2>/dev/null; then
   first_seen_epoch=$now
-  printf '%s\t%s\t%s\t%s\n' "$last_stage" "$now" "$enforce_state" "$nudge_epoch" > "$ENFORCE_FILE"
+  printf '%s\t%s\t%s\n' "$last_stage" "$now" "$enforce_state" > "$ENFORCE_FILE"
 fi
 elapsed=$(( now - first_seen_epoch ))
 [ "$elapsed" -lt 0 ] 2>/dev/null && elapsed=0
@@ -129,7 +125,7 @@ if [ "$elapsed" -ge $(( KILL_MINUTES * 60 )) ] && [ "$enforce_state" = nudged ];
   printf 'failed: unresponsive - no stage progress for %s minutes\n' "$minutes" >> "$STATUS_FILE"
 
   # Record killed state.
-  printf '%s\t%s\t%s\t%s\n' "$last_stage" "$first_seen_epoch" "killed" "$nudge_epoch" > "$ENFORCE_FILE"
+  printf '%s\t%s\t%s\n' "$last_stage" "$first_seen_epoch" "killed" > "$ENFORCE_FILE"
 
   printf 'kill: %s unresponsive for %sm\n' "$ID" "$minutes"
   exit 0
@@ -150,7 +146,7 @@ if [ "$elapsed" -ge $(( NUDGE_MINUTES * 60 )) ] && [ "$enforce_state" = tracking
   "$FM_SEND_BIN" "fm-$ID" "$nudge_msg" 2>/dev/null || true
 
   # Record nudged state.
-  printf '%s\t%s\t%s\t%s\n' "$last_stage" "$first_seen_epoch" "nudged" "$now" > "$ENFORCE_FILE"
+  printf '%s\t%s\t%s\n' "$last_stage" "$first_seen_epoch" "nudged" > "$ENFORCE_FILE"
 
   printf 'nudge: %s %s stalled for %sm\n' "$ID" "$stage_desc" "$minutes"
   exit 0
