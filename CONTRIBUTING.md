@@ -69,6 +69,7 @@ for test_script in tests/*.test.sh; do bash "$test_script"; done   # behavior te
 tests/fm-wake-queue.test.sh               # durable wake queue losslessness, catch-up, double-drain, duplicate-collapse, and drain liveness guard tests
 tests/fm-watcher-lock.test.sh             # watcher singleton, lock-race, watch-arm liveness, and guard-warning tests
 tests/fm-watch-triage.test.sh             # always-on watcher triage: benign absorb, actionable surface, stale status-log override, wedge threshold, heartbeat backstop, and afk one-shot coherence
+tests/fm-watchdog.test.sh                 # fm-watchdog.sh: fresh beacon silence, stale beacon enqueue, missing beacon trigger, and missing wake library survival
 tests/fm-daemon.test.sh                   # sub-supervisor classifier, /afk presence-gating, max-defer, composer, and fm-send submit tests
 tests/fm-send-settle.test.sh              # fm-send post-submit settle pause, tuning, disable, and --key bypass tests
 tests/fm-send-popup-settle.test.sh        # fm-send pre-Enter popup-settle selection for slash commands and codex $skill invocations

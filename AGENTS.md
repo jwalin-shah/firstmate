@@ -105,7 +105,7 @@ state/               volatile runtime signals; gitignored
   .watch.lock .wake-queue.lock watcher singleton and queue serialization locks
   .hash-* .count-* .stale-* .stale-since-* .seen-* .hb-surfaced-* .last-* .heartbeat-streak   watcher internals; never touch
   .watch-triage.log  watcher's absorbed-wake debug log (size-capped); never relied on, safe to delete
-  .last-watcher-beat watcher liveness beacon, touched every poll (including while absorbing benign wakes); fm-guard.sh reads it
+  .last-watcher-beat watcher liveness beacon, touched every poll (including while absorbing benign wakes); fm-guard.sh and fm-watchdog.sh read it
   .subsuper-* .supervise-daemon.*   sub-supervisor internals; never touch
 .no-mistakes/        local validation state and evidence; gitignored
 ```
@@ -722,6 +722,9 @@ So the next time you touch the fleet with queued wakes or no watcher alive, the 
 The grace window keeps normal handling (watcher briefly down between a wake and its re-arm) silent.
 If a guard warning says queued wakes are pending, drain them before doing anything else.
 If a guard warning says watcher liveness is stale, arm `bin/fm-watch-arm.sh` after draining any queued wakes.
+`fm-guard.sh` is ad-hoc: it only checks when a supervision script runs, so a dead watcher can go undetected during long idle stretches.
+`bin/fm-watchdog.sh` fills that gap as an independent background sentinel: it monitors the liveness beacon every `FM_WATCHDOG_INTERVAL` (default 30s) in 5s chunks for responsive signal handling, and writes a `check:` entry to the durable wake queue when the beacon is older than `FM_WATCHDOG_GRACE` (default 120s) or missing.
+It is the passive counterpart to `fm-guard.sh` (ad-hoc) and `fm-watch.sh` (active classification loop), catching a dead watcher even when no other script is running.
 
 `fm-guard.sh` carries a second, independent alarm in the same bordered ●-marked style: the **worktree-tangle** guard.
 Firstmate is a treehouse-pooled git repo of itself - the primary checkout (the repo root, `FM_ROOT`) and every crewmate worktree and secondmate home are linked worktrees of one repo - and the primary must stay on its default branch.
