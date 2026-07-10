@@ -18,7 +18,9 @@
 #   text     -- human-readable note
 set -eu
 
-EVENTS_FILE="${HOME}/.local/share/jw/events.jsonl"
+# FM_EVENTS_FILE overrides the destination so tests can sandbox the bus and
+# never pollute the captain's real ~/.local/share/jw/events.jsonl.
+EVENTS_FILE="${FM_EVENTS_FILE:-${HOME}/.local/share/jw/events.jsonl}"
 EVENT=${1:-}
 THREAD_ID=${2:-}
 
@@ -28,7 +30,12 @@ THREAD_ID=${2:-}
 shift 2
 
 # Build JSON payload from positional args and any extra key=value pairs.
+# Export the fields the python reads from the environment; without these
+# exports every emitted event had empty ts/event/thread_id.
 TS=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+export FM_EVENT_TS="$TS"
+export FM_EVENT_TYPE="$EVENT"
+export FM_EVENT_THREAD_ID="$THREAD_ID"
 if command -v python3 >/dev/null 2>&1; then
   python3 -c "
 import json, sys, os

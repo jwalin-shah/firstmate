@@ -588,14 +588,21 @@ test_teardown_conformance_old_vs_new() {
 
   expect_code 0 "$rc_old" "old fm-teardown.sh (scout, report present) should succeed"$'\n'"$out_old"
   expect_code 0 "$rc_new" "new fm-teardown.sh (scout, report present) should succeed"$'\n'"$out_new"
-  diff -u "$log_old" "$log_new" > "$TMP_ROOT/teardown-diff.txt" 2>&1 \
-    || fail "fm-teardown.sh: tmux+treehouse command log differs old vs new"$'\n'"$(cat "$TMP_ROOT/teardown-diff.txt")"
+  # The command ORDER intentionally changed from the old version: the pane-pgid
+  # lookup (tmux list-panes) now runs BEFORE treehouse return, so the agent's
+  # children are reaped while the pane still exists. The old version looked up the
+  # pgid AFTER treehouse return had already torn the pane down - too late. So this
+  # is no longer a byte-identical equivalence; assert the new correct order.
   assert_contains "$(cat "$log_new")" "treehouse"$'\x1f''return'$'\x1f''--force'$'\x1f'"$wt" \
     "teardown did not call treehouse return --force <worktree>"
   assert_contains "$(cat "$log_new")" "tmux"$'\x1f''kill-window'$'\x1f''-t'$'\x1f'"firstmate:fm-$id" \
     "teardown did not call tmux kill-window -t <window>"
+  lp_line=$(grep -n 'list-panes' "$log_new" | head -1 | cut -d: -f1)
+  tr_line=$(grep -n "treehouse"$'\x1f''return' "$log_new" | head -1 | cut -d: -f1)
+  { [ -n "$lp_line" ] && [ -n "$tr_line" ] && [ "$lp_line" -lt "$tr_line" ]; } \
+    || fail "teardown must look up the pane pgid (list-panes) BEFORE treehouse return; got list-panes@${lp_line:-none} treehouse-return@${tr_line:-none}"
 
-  pass "fm-teardown.sh: treehouse return + tmux kill-window command log is byte-identical old vs new for a scout task"
+  pass "fm-teardown.sh: reaps the pane process group before treehouse return (kill-before-return order)"
 }
 
 # --- backend selection loudly refuses an unknown backend --------------------

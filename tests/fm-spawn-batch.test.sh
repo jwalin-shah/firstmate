@@ -15,6 +15,13 @@ set -u
 SPAWN="$ROOT/bin/fm-spawn.sh"
 TMP_ROOT=$(fm_test_tmproot fm-spawn-batch)
 export FM_BACKEND=tmux
+# Hermetic empty config dir. Clearing FM_CONFIG_OVERRIDE to '' falls through to
+# the repo's real config/, so a live (gitignored) config/crew-dispatch.json
+# would trip the explicit-harness backstop before the batch loop even runs -
+# passing in CI (no such file) but failing on a captain's home. Point config at
+# an empty sandbox instead so the batch semantics are what's under test.
+SANDBOX_CONFIG="$TMP_ROOT/config"
+mkdir -p "$SANDBOX_CONFIG"
 # This suite exercises only the plain-tmux backend path and never opts into
 # herdr, so isolate from an ambient HERDR_ENV=1 in the calling shell, which
 # would otherwise make fm_backend_tmux_container_ensure's herdr-ownership
@@ -28,7 +35,7 @@ run_spawn() {
     FM_STATE_OVERRIDE='' \
     FM_DATA_OVERRIDE='' \
     FM_PROJECTS_OVERRIDE='' \
-    FM_CONFIG_OVERRIDE='' \
+    FM_CONFIG_OVERRIDE="$SANDBOX_CONFIG" \
     FM_SPAWN_NO_GUARD=1 \
     "$SPAWN" "$@" 2>&1
 }
