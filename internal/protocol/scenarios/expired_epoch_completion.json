@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "description": "expired epoch completion: worker attempts to complete a task using an expired lease epoch. This should violate TRANS-LEASE-002 (commands carrying an expired or superseded lease epoch cannot start, heartbeat, complete, or authorize a new side effect).",
+  "initial": {
+    "worker_capacity": { "w1": 1 },
+    "worker_capability": { "w1": ["go"] }
+  },
+  "steps": [
+    { "command": "Submit", "task": "t1", "required": "go" },
+    { "command": "Admit", "task": "t1" },
+    { "command": "Reserve", "task": "t1", "attempt": "a1", "worker": "w1", "lease_epoch": 1 },
+    { "command": "Start", "task": "t1", "attempt": "a1", "lease_epoch": 1 },
+    { "command": "ExpireLease", "task": "t1", "lease_epoch": 1 },
+    { "command": "Complete", "task": "t1", "attempt": "a1", "revision": 1, "lease_epoch": 1 }
+  ],
+  "expected_violation": "TRANS-LEASE-002"
+}

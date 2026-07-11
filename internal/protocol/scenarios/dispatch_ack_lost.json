@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "description": "dispatch ack lost: external dispatch happened but acknowledgement was lost. After worker crash and recovery, no durable dispatch intent exists. This should violate HISTORY-DISPATCH-001 (no external dispatch effect may be authorized without committed durable intent).",
+  "initial": {
+    "worker_capacity": { "w1": 1 },
+    "worker_capability": { "w1": ["go"] }
+  },
+  "steps": [
+    { "command": "Submit", "task": "t1", "required": "go" },
+    { "command": "Admit", "task": "t1" },
+    { "command": "Reserve", "task": "t1", "attempt": "a1", "worker": "w1", "lease_epoch": 1 },
+    { "command": "Dispatch", "task": "t1", "attempt": "a1", "lease_epoch": 1 },
+    { "command": "CrashWorker", "worker": "w1" },
+    { "command": "RecoverWorker", "worker": "w1" }
+  ],
+  "expected_violation": "HISTORY-DISPATCH-001"
+}
