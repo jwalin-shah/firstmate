@@ -652,6 +652,92 @@ test_non_claude_harness_ignores_config_dir() {
   pass "non-claude harnesses do not receive the claude CLAUDE_CONFIG_DIR prefix"
 }
 
+# --- ANTHROPIC_* env var forwarding (Pioneer/TokenRouter lanes) ---------------
+
+test_claude_forwards_anthropic_env_vars_when_set() {
+  local rec id out status launch
+  id=profile-anthropic-env-z20
+  rec=$(make_spawn_case profile-anthropic-env claude "$id")
+  read_case_record "$rec"
+
+  # Run spawn directly (not through run_spawn which pins env vars to empty)
+  # to verify that ANTHROPIC_* env vars are forwarded to the launch command.
+  : > "$LAUNCH_LOG"
+  out=$(FM_ROOT_OVERRIDE='' FM_HOME="$HOME_DIR" \
+    FM_STATE_OVERRIDE="$HOME_DIR/state" FM_DATA_OVERRIDE="$HOME_DIR/data" \
+    FM_PROJECTS_OVERRIDE="$HOME_DIR/projects" FM_CONFIG_OVERRIDE="$HOME_DIR/config" \
+    FM_SPAWN_NO_GUARD=1 FM_FAKE_PANE_PATH="$WT_DIR" TMUX="fake,1,0" \
+    ANTHROPIC_API_KEY="sk-test-key-12345" \
+    ANTHROPIC_BASE_URL="https://test.anthropic.example.com" \
+    ANTHROPIC_DEFAULT_OPUS_MODEL="claude-3-opus-20240229" \
+    ANTHROPIC_DEFAULT_SONNET_MODEL="claude-3-sonnet-20240229" \
+    ANTHROPIC_DEFAULT_HAIKU_MODEL="claude-3-haiku-20240307" \
+    FM_FAKE_LAUNCH_LOG="$LAUNCH_LOG" PATH="$FAKEBIN_DIR:$PATH" \
+    "$SPAWN" "$id" "$PROJ_DIR" 2>&1)
+  status=$?
+  expect_code 0 "$status" "claude spawn with ANTHROPIC_* env vars set should succeed"
+  launch=$(cat "$LAUNCH_LOG")
+  assert_contains "$launch" "ANTHROPIC_API_KEY='sk-test-key-12345'" \
+    "claude launch did not forward ANTHROPIC_API_KEY"
+  assert_contains "$launch" "ANTHROPIC_BASE_URL='https://test.anthropic.example.com'" \
+    "claude launch did not forward ANTHROPIC_BASE_URL"
+  assert_contains "$launch" "ANTHROPIC_DEFAULT_OPUS_MODEL='claude-3-opus-20240229'" \
+    "claude launch did not forward ANTHROPIC_DEFAULT_OPUS_MODEL"
+  assert_contains "$launch" "ANTHROPIC_DEFAULT_SONNET_MODEL='claude-3-sonnet-20240229'" \
+    "claude launch did not forward ANTHROPIC_DEFAULT_SONNET_MODEL"
+  assert_contains "$launch" "ANTHROPIC_DEFAULT_HAIKU_MODEL='claude-3-haiku-20240307'" \
+    "claude launch did not forward ANTHROPIC_DEFAULT_HAIKU_MODEL"
+  pass "claude forwards firstmate's ANTHROPIC_* env vars so the crewmate authenticates against the same provider"
+}
+
+test_claude_omits_anthropic_env_vars_when_unset() {
+  local rec id out status launch
+  id=profile-no-anthropic-env-z21
+  rec=$(make_spawn_case profile-no-anthropic-env claude "$id")
+  read_case_record "$rec"
+
+  # run_spawn pins ANTHROPIC_* vars empty by default, exercising the default
+  # path where fm-spawn adds no prefix.
+  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR")
+  status=$?
+  expect_code 0 "$status" "claude spawn without ANTHROPIC_* env vars should succeed"
+  launch=$(cat "$LAUNCH_LOG")
+  assert_not_contains "$launch" "ANTHROPIC_API_KEY=" \
+    "claude launch must not add API key prefix when firstmate has no ANTHROPIC_API_KEY set"
+  assert_not_contains "$launch" "ANTHROPIC_BASE_URL=" \
+    "claude launch must not add base URL prefix when firstmate has no ANTHROPIC_BASE_URL set"
+  assert_not_contains "$launch" "ANTHROPIC_DEFAULT_OPUS_MODEL=" \
+    "claude launch must not add model prefix when firstmate has no ANTHROPIC_DEFAULT_OPUS_MODEL set"
+  pass "claude omits the ANTHROPIC_* env prefix when firstmate runs with default credentials"
+}
+
+test_anthropic_env_vars_forwarded_for_all_harnesses() {
+  local rec id out status launch
+  id=profile-anthropic-all-harness-z22
+  rec=$(make_spawn_case profile-anthropic-all-harness codex "$id")
+  read_case_record "$rec"
+
+  # ANTHROPIC_* env vars are forwarded for ALL harnesses (not just claude),
+  # since they authenticate the provider, not the agent tool.
+  : > "$LAUNCH_LOG"
+  out=$(FM_ROOT_OVERRIDE='' FM_HOME="$HOME_DIR" \
+    FM_STATE_OVERRIDE="$HOME_DIR/state" FM_DATA_OVERRIDE="$HOME_DIR/data" \
+    FM_PROJECTS_OVERRIDE="$HOME_DIR/projects" FM_CONFIG_OVERRIDE="$HOME_DIR/config" \
+    FM_SPAWN_NO_GUARD=1 FM_FAKE_PANE_PATH="$WT_DIR" TMUX="fake,1,0" \
+    ANTHROPIC_API_KEY="sk-test-key-99999" \
+    ANTHROPIC_BASE_URL="https://test.anthropic.example.com" \
+    FM_FAKE_LAUNCH_LOG="$LAUNCH_LOG" PATH="$FAKEBIN_DIR:$PATH" \
+    "$SPAWN" "$id" "$PROJ_DIR" --model gpt-5 --effort high 2>&1)
+  status=$?
+  expect_code 0 "$status" "codex spawn with ANTHROPIC_* env vars set should succeed"
+  launch=$(cat "$LAUNCH_LOG")
+  assert_contains "$launch" "ANTHROPIC_API_KEY='sk-test-key-99999'" \
+    "codex launch did not forward ANTHROPIC_API_KEY"
+  assert_contains "$launch" "ANTHROPIC_BASE_URL='https://test.anthropic.example.com'" \
+    "codex launch did not forward ANTHROPIC_BASE_URL"
+  pass "ANTHROPIC_* env vars are forwarded for all harnesses, not just claude"
+}
+
 test_active_dispatch_profile_does_not_block_secondmate_launch() {
   local rec id sm out status
   id=profile-secondmate-z16
@@ -696,5 +782,8 @@ test_claude_forwards_firstmate_config_dir_when_set
 test_claude_omits_config_dir_prefix_when_unset
 test_non_claude_harness_ignores_config_dir
 test_active_dispatch_profile_does_not_block_secondmate_launch
+test_claude_forwards_anthropic_env_vars_when_set
+test_claude_omits_anthropic_env_vars_when_unset
+test_anthropic_env_vars_forwarded_for_all_harnesses
 
 echo "# all fm-spawn-dispatch-profile tests passed"
