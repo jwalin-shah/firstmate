@@ -1667,12 +1667,27 @@ LAUNCH=${LAUNCH//__PITURNEND__/$sq_piturnend}
 LAUNCH=${LAUNCH//__PIWATCH__/$sq_piwatch}
 LAUNCH=${LAUNCH//__OPINPUT__/$sq_opinput}
 # Crewmate panes are created by a long-lived tmux/herdr daemon that does not
-# inherit firstmate's current environment, so a bare `claude` in the pane falls
-# back to the default ~/.claude store even when firstmate itself runs under a
-# different CLAUDE_CONFIG_DIR (for example a work-vs-personal subscription split).
-# Forward firstmate's own resolved store onto the claude launch so the crewmate
-# uses the same credential/config firstmate is authenticated with. Only when set;
-# an unset value is the single-store default and needs no prefix.
+# inherit firstmate's current environment, so a bare agent in the pane falls
+# back to default credentials even when firstmate itself runs under a
+# different API key, base URL, or config directory. Forward firstmate's own
+# resolved environment onto the launch so the crewmate authenticates against
+# the same provider (Pioneer/TokenRouter lanes).  Only when set; an unset
+# value is the default and needs no prefix.
+if [ -n "${ANTHROPIC_API_KEY:-}" ]; then
+  LAUNCH="ANTHROPIC_API_KEY=$(shell_quote "$ANTHROPIC_API_KEY") $LAUNCH"
+fi
+if [ -n "${ANTHROPIC_BASE_URL:-}" ]; then
+  LAUNCH="ANTHROPIC_BASE_URL=$(shell_quote "$ANTHROPIC_BASE_URL") $LAUNCH"
+fi
+if [ -n "${ANTHROPIC_DEFAULT_OPUS_MODEL:-}" ]; then
+  LAUNCH="ANTHROPIC_DEFAULT_OPUS_MODEL=$(shell_quote "$ANTHROPIC_DEFAULT_OPUS_MODEL") $LAUNCH"
+fi
+if [ -n "${ANTHROPIC_DEFAULT_SONNET_MODEL:-}" ]; then
+  LAUNCH="ANTHROPIC_DEFAULT_SONNET_MODEL=$(shell_quote "$ANTHROPIC_DEFAULT_SONNET_MODEL") $LAUNCH"
+fi
+if [ -n "${ANTHROPIC_DEFAULT_HAIKU_MODEL:-}" ]; then
+  LAUNCH="ANTHROPIC_DEFAULT_HAIKU_MODEL=$(shell_quote "$ANTHROPIC_DEFAULT_HAIKU_MODEL") $LAUNCH"
+fi
 if [ "$HARNESS" = claude ] && [ -n "${CLAUDE_CONFIG_DIR:-}" ]; then
   LAUNCH="CLAUDE_CONFIG_DIR=$(shell_quote "$CLAUDE_CONFIG_DIR") $LAUNCH"
 fi
