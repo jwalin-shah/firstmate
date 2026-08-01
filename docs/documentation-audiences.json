@@ -260,6 +260,10 @@
       "audience": "operator-current"
     },
     {
+      "path": "docs/proof-enforcement.md",
+      "audience": "maintainer-architecture"
+    },
+    {
       "path": "docs/scripts.md",
       "audience": "operator-current"
     },

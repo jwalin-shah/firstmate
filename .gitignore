@@ -9,3 +9,6 @@ __pycache__/
 *.pyc
 .env
 config/
+
+# Proof-enforcement ledger (bin/fm-proof.sh); keep design docs if any under docs/
+.proof/

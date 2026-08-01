@@ -1486,6 +1486,9 @@ EOF
       cat > "$STATE/$ID.pi-ext.ts" <<EOF
 // Firstmate semantic busy-state events + turn-end notification; written by
 // fm-spawn under the contract owned by bin/fm-busy-lib.sh.
+// Also forwards write-shaped tool_call events through
+// bin/fm-proof-pretool-check.sh (docs/proof-enforcement.md) so crewmates
+// cannot write code while an active proof ledger is incomplete.
 // Semantic state: "agent_start" -> busy when a low-level agent run begins;
 // "agent_settled" -> idle only when ctx.isIdle() confirms Pi will not
 // continue automatically - auto-retries, auto-compaction retries, tool
@@ -1502,6 +1505,18 @@ const busyEvent = (state: string, event: string) =>
       "--gen", "$BUSY_GEN", "--source", "pi-ext", "--event", event,
     ], () => resolve());
   });
+const proofCheck = (args: string[]) =>
+  new Promise<{ code: number; stderr: string }>((resolve) => {
+    const child = execFile("$FM_ROOT/bin/fm-proof-pretool-check.sh", args, {
+      encoding: "utf8",
+    }, (error, _stdout, stderr) => {
+      const code = error && typeof (error as { code?: unknown }).code === "number"
+        ? Number((error as { code: number }).code)
+        : 0;
+      resolve({ code, stderr: String(stderr || "") });
+    });
+    child.on("error", () => resolve({ code: 0, stderr: "" }));
+  });
 export default function (pi: any) {
   pi.on("agent_start", () => busyEvent("busy", "agent-start"));
   pi.on("agent_settled", (_event: any, ctx: any) => {
@@ -1509,6 +1524,28 @@ export default function (pi: any) {
     return busyEvent("idle", "agent-settled");
   });
   pi.on("turn_end", () => execFile("touch", ["$TURNEND"]));
+  pi.on("tool_call", async (event: any) => {
+    if (!event || event.type !== "tool_call") return {};
+    const toolName = String(event.toolName || "");
+    const input = event.input || {};
+    if (toolName === "bash") {
+      const command = String(input.command || "");
+      if (!command) return {};
+      const result = await proofCheck(["--command", command]);
+      if (result.code === 2) {
+        return { block: true, reason: result.stderr.trim() || "denied by proof-enforcement" };
+      }
+      return {};
+    }
+    const path = String(input.path || input.file_path || "");
+    const args = ["--tool", toolName];
+    if (path) args.push("--path", path);
+    const result = await proofCheck(args);
+    if (result.code === 2) {
+      return { block: true, reason: result.stderr.trim() || "denied by proof-enforcement" };
+    }
+    return {};
+  });
 }
 EOF
       ;;

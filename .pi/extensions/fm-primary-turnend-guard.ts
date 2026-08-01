@@ -77,15 +77,17 @@ function runGuard(): Promise<{ code: number; stderr: string }> {
 }
 
 // PreToolUse seatbelts (bin/fm-arm-pretool-check.sh, docs/arm-pretool-check.md;
-// bin/fm-cd-pretool-check.sh, docs/cd-guard.md). Both piggyback on this same
-// extension file rather than separate ones so no extra Pi -e flag is needed at
-// launch - the primary already loads this file for the turn-end guard, and
-// pi.on("tool_call", ...) can block (verified 2026-07-09 against pi 0.80.5:
-// returning {block: true} prevents the bash command from running). Each owner
-// script owns its own decision and is inert outside the real primary checkout.
-function runChecker(script: string, command: string): Promise<{ code: number; stderr: string }> {
+// bin/fm-cd-pretool-check.sh, docs/cd-guard.md;
+// bin/fm-proof-pretool-check.sh, docs/proof-enforcement.md). They piggyback on
+// this same extension file rather than separate ones so no extra Pi -e flag is
+// needed at launch - the primary already loads this file for the turn-end
+// guard, and pi.on("tool_call", ...) can block (verified 2026-07-09 against pi
+// 0.80.5: returning {block: true} prevents the tool from running). Each owner
+// script owns its own decision; arm/cd are inert outside the real primary
+// checkout, while proof enforcement is opt-in per target repo ledger.
+function runChecker(script: string, args: string[]): Promise<{ code: number; stderr: string }> {
   return new Promise((resolveResult) => {
-    const child = spawn(`${root}/bin/${script}`, ["--command", command], {
+    const child = spawn(`${root}/bin/${script}`, args, {
       stdio: ["ignore", "ignore", "pipe"],
     });
     let stderr = "";
@@ -98,11 +100,15 @@ function runChecker(script: string, command: string): Promise<{ code: number; st
 }
 
 function runPretoolCheck(command: string): Promise<{ code: number; stderr: string }> {
-  return runChecker("fm-arm-pretool-check.sh", command);
+  return runChecker("fm-arm-pretool-check.sh", ["--command", command]);
 }
 
 function runCdCheck(command: string): Promise<{ code: number; stderr: string }> {
-  return runChecker("fm-cd-pretool-check.sh", command);
+  return runChecker("fm-cd-pretool-check.sh", ["--command", command]);
+}
+
+function runProofCheck(args: string[]): Promise<{ code: number; stderr: string }> {
+  return runChecker("fm-proof-pretool-check.sh", args);
 }
 
 export default function (pi: ExtensionAPI) {
@@ -123,16 +129,41 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.on("tool_call", async (event) => {
-    if (event.type !== "tool_call" || event.toolName !== "bash") return {};
-    const command = String((event.input as { command?: unknown })?.command ?? "");
-    if (!command) return {};
-    const cdResult = await runCdCheck(command);
-    if (cdResult.code === 2) {
-      return { block: true, reason: cdResult.stderr.trim() || "denied by the cd-guard PreToolUse seatbelt" };
+    if (event.type !== "tool_call") return {};
+    const toolName = String(event.toolName ?? "");
+    const input = (event.input ?? {}) as {
+      command?: unknown;
+      path?: unknown;
+      file_path?: unknown;
+    };
+
+    if (toolName === "bash") {
+      const command = String(input.command ?? "");
+      if (!command) return {};
+      const cdResult = await runCdCheck(command);
+      if (cdResult.code === 2) {
+        return { block: true, reason: cdResult.stderr.trim() || "denied by the cd-guard PreToolUse seatbelt" };
+      }
+      const armResult = await runPretoolCheck(command);
+      if (armResult.code === 2) {
+        return { block: true, reason: armResult.stderr.trim() || "denied by the watcher-arm PreToolUse seatbelt" };
+      }
+      const proofBash = await runProofCheck(["--command", command]);
+      if (proofBash.code === 2) {
+        return { block: true, reason: proofBash.stderr.trim() || "denied by proof-enforcement PreToolUse seatbelt" };
+      }
+      return {};
     }
-    const result = await runPretoolCheck(command);
-    if (result.code !== 2) return {};
-    return { block: true, reason: result.stderr.trim() || "denied by the watcher-arm PreToolUse seatbelt" };
+
+    // Write-shaped tools: development-contract gate (docs/proof-enforcement.md).
+    const path = String(input.path ?? input.file_path ?? "");
+    const proofArgs = ["--tool", toolName];
+    if (path) proofArgs.push("--path", path);
+    const proofWrite = await runProofCheck(proofArgs);
+    if (proofWrite.code === 2) {
+      return { block: true, reason: proofWrite.stderr.trim() || "denied by proof-enforcement PreToolUse seatbelt" };
+    }
+    return {};
   });
 
   pi.on("agent_settled", async () => {
